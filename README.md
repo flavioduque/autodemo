@@ -39,7 +39,7 @@ DemoMotion workflow:
 | `session_status` | Current recording state |
 | `session_stop` | Persist raw video + capture manifest |
 | `project_build` | Compile capture into editable Remotion project |
-| `project_update` | Modify style, zooms, trims and callouts |
+| `project_update` | Modify style, zooms, edit list (cuts and speed ramps) and callouts |
 | `render_video` | Render final H.264 MP4 |
 | `demo_finalize` | Stop + compile + render in one call |
 

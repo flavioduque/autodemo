@@ -14,7 +14,8 @@ const defaultProps = {
   style: { background: "#0b1020", padding: 56, radius: 24, shadow: true },
   actions: [],
   zooms: [],
-  trims: [],
+  // Identity edit: the whole capture, normal speed (spec section 3).
+  editList: [{ sourceFromMs: 0, sourceToMs: 5000, speed: 1 }],
   callouts: []
 };
 

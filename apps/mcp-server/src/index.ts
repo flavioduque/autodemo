@@ -7,9 +7,35 @@ import {
 import { buildProject, updateProject } from "./project.js";
 import { renderVideo } from "./render.js";
 import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 const result = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }]
+});
+
+/**
+ * One kept slice of the capture, played at its own speed (spec section 3).
+ * Cuts are implicit: source material inside no segment was cut. This mirrors
+ * EditSegmentSchema in @demomotion/schema, restated here because the MCP surface
+ * is built with its own zod instance.
+ */
+const editSegmentInput = z.object({
+  sourceFromMs: z.number().nonnegative(),
+  sourceToMs: z.number().positive(),
+  speed: z.number().positive().default(1)
+}).refine((v) => v.sourceToMs > v.sourceFromMs, "sourceToMs must be greater than sourceFromMs");
+
+/** Exported so the accepted surface can be exercised without booting a server. */
+export const projectUpdateInput = z.object({
+  projectPath: z.string(),
+  title: z.string().optional(),
+  style: z.object({
+    background: z.string().optional(), padding: z.number().min(0).max(300).optional(),
+    radius: z.number().min(0).max(100).optional(), shadow: z.boolean().optional()
+  }).optional(),
+  zooms: z.array(z.object({fromMs:z.number().nonnegative(),toMs:z.number().positive(),x:z.number().min(0).max(1),y:z.number().min(0).max(1),scale:z.number().min(1).max(3)})).optional(),
+  editList: z.array(editSegmentInput).optional(),
+  callouts: z.array(z.object({fromMs:z.number().nonnegative(),toMs:z.number().positive(),text:z.string().min(1),x:z.number().min(0).max(1).default(.5),y:z.number().min(0).max(1).default(.85)})).optional()
 });
 
 function createServer() {
@@ -116,18 +142,8 @@ function createServer() {
 
 
   server.registerTool("project_update", {
-    description: "Update editable Remotion project styling, zooms, trims, callouts, or title without modifying the raw recording.",
-    inputSchema: z.object({
-      projectPath: z.string(),
-      title: z.string().optional(),
-      style: z.object({
-        background: z.string().optional(), padding: z.number().min(0).max(300).optional(),
-        radius: z.number().min(0).max(100).optional(), shadow: z.boolean().optional()
-      }).optional(),
-      zooms: z.array(z.object({fromMs:z.number().nonnegative(),toMs:z.number().positive(),x:z.number().min(0).max(1),y:z.number().min(0).max(1),scale:z.number().min(1).max(3)})).optional(),
-      trims: z.array(z.object({fromMs:z.number().nonnegative(),toMs:z.number().positive()})).optional(),
-      callouts: z.array(z.object({fromMs:z.number().nonnegative(),toMs:z.number().positive(),text:z.string().min(1),x:z.number().min(0).max(1).default(.5),y:z.number().min(0).max(1).default(.85)})).optional()
-    })
+    description: "Update editable Remotion project styling, zooms, edit list (cuts and speed ramps), callouts, or title without modifying the raw recording.",
+    inputSchema: projectUpdateInput
   }, async ({projectPath, ...patch}) => result(await updateProject(projectPath, patch)));
 
 
@@ -157,5 +173,9 @@ function createServer() {
   return server;
 }
 
-void serveStdio(createServer);
-console.error("DemoMotion MCP running on stdio");
+// Only speak stdio when this file is the process entrypoint. Importing it
+// (a test inspecting the tool surface, for instance) must not start a server.
+if (process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url)) {
+  void serveStdio(createServer);
+  console.error("DemoMotion MCP running on stdio");
+}

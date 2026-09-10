@@ -9,6 +9,7 @@
     "resolveJsonModule": true,
     "types": ["node"],
     "declaration": true,
+    "noEmitOnError": true,
     "sourceMap": true
   }
 }

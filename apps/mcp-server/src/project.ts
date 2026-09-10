@@ -29,7 +29,15 @@ export async function buildProject(captureManifestPath: string, title: string): 
   return { project, projectPath };
 }
 
-export async function updateProject(projectPath: string, patch: Partial<Pick<DemoProject, "style"|"zooms"|"trims"|"callouts"|"title">>) {
+export type ProjectPatch = {
+  title?: DemoProject["title"];
+  style?: Partial<DemoProject["style"]>;
+  zooms?: DemoProject["zooms"];
+  trims?: DemoProject["trims"];
+  callouts?: DemoProject["callouts"];
+};
+
+export async function updateProject(projectPath: string, patch: ProjectPatch) {
   const current = DemoProjectSchema.parse(JSON.parse(await fs.readFile(projectPath, "utf8")));
   const next = DemoProjectSchema.parse({
     ...current,

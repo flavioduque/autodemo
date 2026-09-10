@@ -54,7 +54,7 @@ packages/
   schema/           shared project/action schemas
 skills/
   demomotion/       agent workflow skill
-scripts/            validation/publication helpers
+scripts/            publication helper
 docs/               architecture
 ```
 
@@ -64,17 +64,38 @@ Requires Node.js 22+ and pnpm 10.
 
 ```bash
 pnpm install
-pnpm exec playwright install chromium
+pnpm --filter @demomotion/mcp-server exec playwright install chromium
 pnpm typecheck
 pnpm test
 pnpm build
 ```
 
+The Playwright install command must be scoped with `--filter`. Playwright is a
+dependency of `apps/mcp-server`, not of the workspace root, so a bare
+`pnpm exec playwright ...` at the root can silently fall through to an unrelated
+Playwright found on `PATH` and provision the wrong browser cache.
+
+If Playwright has no bundled Chromium build for your platform (for example
+macOS 13, where Playwright 1.63.0 requires a Chromium revision with no macOS 13
+binary), use a locally installed browser instead:
+
+```bash
+DEMOMOTION_BROWSER_CHANNEL=chrome pnpm dev:mcp
+```
+
+See [Browser selection](#browser-selection).
+
 ## Run
+
+For interactive development:
 
 ```bash
 pnpm dev:mcp
 ```
+
+MCP clients must not use `pnpm dev:mcp`: pnpm prints its script banner on
+**stdout**, and an MCP stdio transport requires stdout to carry JSON-RPC frames
+only. Point the client at the `tsx` entry directly.
 
 Example MCP client entry:
 
@@ -82,12 +103,32 @@ Example MCP client entry:
 {
   "mcpServers": {
     "demomotion": {
-      "command": "pnpm",
-      "args": ["--dir", "/absolute/path/demomotion-mcp", "dev:mcp"]
+      "command": "/absolute/path/demomotion-mcp/apps/mcp-server/node_modules/.bin/tsx",
+      "args": ["/absolute/path/demomotion-mcp/apps/mcp-server/src/index.ts"],
+      "cwd": "/absolute/path/demomotion-mcp",
+      "env": {
+        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+      }
     }
   }
 }
 ```
+
+`cwd` must be the repository root: recording sessions are written to
+`data/sessions/` relative to the working directory.
+
+## Browser selection
+
+| Variable | Default | Effect |
+|---|---|---|
+| `DEMOMOTION_BROWSER_CHANNEL` | unset | Unset: use Playwright's bundled Chromium (deterministic, used in CI). Set to a Playwright channel such as `chrome` or `msedge`: drive that locally installed browser instead. |
+
+```bash
+DEMOMOTION_BROWSER_CHANNEL=chrome pnpm dev:mcp
+```
+
+Use this when the bundled Chromium cannot be provisioned on the host. If a
+launch fails without the variable set, the error explains this option.
 
 ## Agent skill
 
@@ -108,6 +149,8 @@ Optional host restriction:
 ```bash
 DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 pnpm dev:mcp
 ```
+
+See `.env.example` for all supported variables.
 
 ## License
 

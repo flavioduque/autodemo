@@ -25,13 +25,18 @@ test("identity edit: the single clip lasts as long as the whole composition", ()
 test("edited timeline: clips tile the composition with no gap, and the last one reaches the end", () => {
   // Hand-computed from spec section 3: keep [0,2000) at 1x -> 2000 ms of output,
   // then [5000,8000) at 1x -> 3000 ms. Total output 5000 ms; [2000,5000) is cut.
+  //
+  // Transitions off: with a crossfade the clips deliberately OVERLAP, which is
+  // still gapless but no longer exactly adjacent. The same tail invariant with
+  // transitions on is asserted in transitions.test.ts.
   const html = generateComposition(project({
     durationMs: 10000,
+    style: { cutTransitionMs: 0 },
     editList: [
       { sourceFromMs: 0, sourceToMs: 2000, speed: 1 },
       { sourceFromMs: 5000, sourceToMs: 8000, speed: 1 }
     ]
-  }));
+  } as never));
 
   const total = Number(rootAttr(html, "data-duration"));
   assert.equal(total, 5);

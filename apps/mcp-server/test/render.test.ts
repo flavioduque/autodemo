@@ -88,6 +88,79 @@ async function markerBox(mp4: string, atSec: number, rgb: [number, number, numbe
 }
 
 const TL_RED: [number, number, number] = [225, 29, 72]; // .corner--tl { background: #e11d48 }
+const CAPTION_ACCENT: [number, number, number] = [56, 189, 248]; // style.captionAccent #38bdf8
+
+/**
+ * Every pixel close to the caption accent colour in one extracted frame: how
+ * many, and where their horizontal centre of mass is. The accent is the 2 px
+ * underline under the ACTIVE word, so the centroid moving between two instants
+ * is the word-by-word highlight, measured in pixels rather than in markup.
+ */
+async function accentPixels(mp4: string, atSec: number, width = 1920, height = 1080) {
+  const { stdout } = await run("ffmpeg", [
+    "-v", "error", "-ss", String(atSec), "-i", mp4, "-frames:v", "1",
+    "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+  ], { encoding: "buffer", maxBuffer: 256 * 1024 * 1024 });
+  const buf = stdout as unknown as Buffer;
+  assert.equal(buf.length, width * height * 3, "unexpected raw frame size");
+  let count = 0;
+  let sumX = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 3;
+      if (Math.abs(buf[i] - CAPTION_ACCENT[0]) <= 26 && Math.abs(buf[i + 1] - CAPTION_ACCENT[1]) <= 26 && Math.abs(buf[i + 2] - CAPTION_ACCENT[2]) <= 26) {
+        count++;
+        sumX += x;
+      }
+    }
+  }
+  return { count, centroidX: count > 0 ? sumX / count : NaN };
+}
+
+/** One downscaled frame as raw RGB, for whole-frame comparisons. */
+async function smallFrame(mp4: string, atSec: number): Promise<Buffer> {
+  const { stdout } = await run("ffmpeg", [
+    "-v", "error", "-ss", String(atSec), "-i", mp4, "-frames:v", "1",
+    "-vf", "scale=480:270", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+  ], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
+  return stdout as unknown as Buffer;
+}
+
+/** One EXACT frame by index, downscaled. Time-based seeking is useless for a
+ *  fade: at 30 fps, t = 0.02 s is already frame 1, a tenth of the way in. */
+async function frameByIndex(mp4: string, index: number): Promise<Buffer> {
+  const { stdout } = await run("ffmpeg", [
+    "-v", "error", "-i", mp4, "-vf", `select='eq(n\,${index})',scale=480:270`,
+    "-vsync", "0", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+  ], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
+  const buf = stdout as unknown as Buffer;
+  assert.ok(buf.length > 0, `no frame ${index} in ${path.basename(mp4)}`);
+  return buf;
+}
+
+/** The very last frame of a file, without having to know how many there are. */
+async function lastFrame(mp4: string): Promise<Buffer> {
+  const { stdout } = await run("ffmpeg", [
+    "-v", "error", "-sseof", "-0.04", "-i", mp4, "-vf", "scale=480:270",
+    "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+  ], { encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
+  return stdout as unknown as Buffer;
+}
+
+/** Mean channel value of a frame: how bright the whole picture is. */
+function meanLevel(frame: Buffer): number {
+  let total = 0;
+  for (let i = 0; i < frame.length; i++) total += frame[i];
+  return total / frame.length;
+}
+
+/** Mean absolute per-channel difference between two frames of the same size. */
+function meanAbsDiff(a: Buffer, b: Buffer): number {
+  assert.equal(a.length, b.length, "frames of different sizes cannot be compared");
+  let total = 0;
+  for (let i = 0; i < a.length; i++) total += Math.abs(a[i] - b[i]);
+  return total / a.length;
+}
 
 test("HYPERFRAMES_NO_TELEMETRY is set by default and an explicit operator choice is kept", () => {
   assert.equal(telemetryEnv({}).HYPERFRAMES_NO_TELEMETRY, "1");
@@ -99,7 +172,13 @@ test("HYPERFRAMES_NO_TELEMETRY is set by default and an explicit operator choice
 test("the generated composition holds its tail instead of going black", { skip, timeout: TIMEOUT }, async () => {
   const dir = await tmpdir();
   try {
-    const project = syntheticProject();
+    // The closing fade is switched OFF here on purpose: it darkens the last
+    // frames deliberately, and blackdetect cannot tell a deliberate fade from
+    // the uncovered-tail defect this test exists to catch. That the fade itself
+    // works is a separate test below.
+    const project = syntheticProject({
+      style: { background: "#0b1020", padding: 56, radius: 24, shadow: true, openingFadeMs: 0, endingFadeMs: 0 }
+    });
     const videoSrc = videoSrcName(SOURCE);
     const good = path.join(dir, "good.mp4");
     await renderCompositionHtml(generateComposition(project, { videoSrc }), SOURCE, good, videoSrc);
@@ -153,6 +232,164 @@ test("corner markers come out square — the objectFit:cover crop is gone", { sk
     const badBox = await markerBox(bad, 8.0, TL_RED);
     const badRatio = badBox.width / badBox.height;
     assert.ok(badRatio - 1 > 0.1, `cover control produced ${badBox.width}x${badBox.height} (ratio ${badRatio.toFixed(3)}) — the squareness check cannot detect the crop`);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("captions are on screen inside their window, absent outside it, and the highlight moves word by word",
+  { skip, timeout: TIMEOUT }, async () => {
+  const dir = await tmpdir();
+  try {
+    // Hand-split by distributeWords over [2000, 6000): 2.000 | 2.818 | 3.454 |
+    // 5.000 | 6.000 (the worked example in packages/core/test/captions.test.ts).
+    const project = syntheticProject({
+      captions: [{
+        fromMs: 2000, toMs: 6000, text: "Open the settings panel",
+        words: [
+          { text: "Open", fromMs: 2000, toMs: 2818 },
+          { text: "the", fromMs: 2818, toMs: 3454 },
+          { text: "settings", fromMs: 3454, toMs: 5000 },
+          { text: "panel", fromMs: 5000, toMs: 6000 }
+        ]
+      }]
+    });
+    const videoSrc = videoSrcName(SOURCE);
+    const mp4 = path.join(dir, "captions.mp4");
+    await renderCompositionHtml(generateComposition(project, { videoSrc }), SOURCE, mp4, videoSrc);
+
+    // Seed first: the caption really IS on screen, so absence can mean something.
+    const first = await accentPixels(mp4, 2.3);   // "Open" is the active word
+    assert.ok(first.count > 100, `the active word's accent underline is not on screen (${first.count} px)`);
+
+    // Half one: the highlight MOVES — the same caption, a later word, and the
+    // underline has travelled to the right.
+    const later = await accentPixels(mp4, 5.5);   // "panel", the last word
+    assert.ok(later.count > 100, `no accent underline at 5.5 s (${later.count} px)`);
+    assert.ok(later.centroidX - first.centroidX > 120,
+      `the highlight did not move: ${first.centroidX.toFixed(0)} px -> ${later.centroidX.toFixed(0)} px`);
+
+    // Half two: outside its own window the caption is gone completely.
+    const after = await accentPixels(mp4, 8.0);
+    assert.equal(after.count, 0, `the caption leaked past its window (${after.count} accent px at 8 s)`);
+    const before = await accentPixels(mp4, 1.0);
+    assert.equal(before.count, 0, `the caption was on screen before its window (${before.count} accent px at 1 s)`);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a crossfade at a cut really blends both sides — measured in rendered pixels",
+  { skip, timeout: TIMEOUT }, async () => {
+  const dir = await tmpdir();
+  try {
+    // The cut lands at output 3.0 s, between two visually different states of the
+    // capture: the client list (media 3 s) and the filled modal (media 7 s).
+    const editList = [
+      { sourceFromMs: 0, sourceToMs: 3000, speed: 1 },
+      { sourceFromMs: 7000, sourceToMs: 9000, speed: 1 }
+    ];
+    const style = { background: "#0b1020", padding: 56, radius: 24, shadow: true, openingFadeMs: 0, endingFadeMs: 0 };
+    const videoSrc = videoSrcName(SOURCE);
+
+    const faded = path.join(dir, "faded.mp4");
+    const hard = path.join(dir, "hard.mp4");
+    await renderCompositionHtml(generateComposition(syntheticProject({ editList, style: { ...style, cutTransitionMs: 180 } }), { videoSrc }), SOURCE, faded, videoSrc);
+    await renderCompositionHtml(generateComposition(syntheticProject({ editList, style: { ...style, cutTransitionMs: 0 } }), { videoSrc }), SOURCE, hard, videoSrc);
+
+    // The two pure sides, taken from the HARD CUT render: at 2.91 s it is still
+    // the outgoing clip, at 3.02 s it is already the incoming one.
+    const outgoing = await smallFrame(hard, 2.91);
+    const incoming = await smallFrame(hard, 3.02);
+    const sidesDiffer = meanAbsDiff(outgoing, incoming);
+    // Control: without two genuinely different pictures, "it blended" is unprovable.
+    assert.ok(sidesDiffer > 2, `the two sides of the cut look the same (${sidesDiffer.toFixed(3)}) — nothing to dissolve`);
+
+    // The same instant in the CROSSFADED render, mid-dissolve.
+    const mid = await smallFrame(faded, 2.91);
+    const toOutgoing = meanAbsDiff(mid, outgoing);
+    const toIncoming = meanAbsDiff(mid, incoming);
+
+    // Half one: the frame matches NEITHER pure side. This is the whole claim —
+    // an overlap that HyperFrames silently dropped would leave it identical to one.
+    assert.ok(toOutgoing > 0.5, `mid-dissolve frame is the outgoing side (${toOutgoing.toFixed(3)}) — nothing blended`);
+    assert.ok(toIncoming > 0.5, `mid-dissolve frame is the incoming side (${toIncoming.toFixed(3)}) — nothing blended`);
+
+    // Half two: it is not just "different", it is BETWEEN them. For a linear
+    // alpha blend the two distances add up to the distance between the sides.
+    const ratio = (toOutgoing + toIncoming) / sidesDiffer;
+    assert.ok(ratio < 1.3, `the frame is not on the line between the two sides (sum/base = ${ratio.toFixed(3)})`);
+
+    // And the measurement is not vacuous: run it on the composition WITHOUT the
+    // transition and it reports an exact match with the outgoing side.
+    const hardMid = await smallFrame(hard, 2.85);
+    assert.ok(meanAbsDiff(hardMid, outgoing) < 0.5,
+      "the hard-cut control does not read as a pure side, so 'matches neither side' proves nothing");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the crossfade does not reintroduce the black tail", { skip, timeout: TIMEOUT }, async () => {
+  const dir = await tmpdir();
+  try {
+    const videoSrc = videoSrcName(SOURCE);
+    const project = syntheticProject({
+      style: { background: "#0b1020", padding: 56, radius: 24, shadow: true, openingFadeMs: 0, endingFadeMs: 0 },
+      editList: [
+        { sourceFromMs: 0, sourceToMs: 3000, speed: 1 },
+        { sourceFromMs: 7000, sourceToMs: 10315, speed: 1 }
+      ]
+    });
+    const mp4 = path.join(dir, "tail.mp4");
+    await renderCompositionHtml(generateComposition(project, { videoSrc }), SOURCE, mp4, videoSrc);
+
+    // Total output is 3000 + 3315 = 6315 ms, unchanged by the 180 ms crossfade:
+    // the transition borrows material, it does not shorten the timeline.
+    // The last second must hold picture — except the deliberate closing fade,
+    // which is switched off here so black can only mean the old defect.
+    const tail = await blackDurations(mp4, 5.2, 6.3);
+    assert.deepEqual(tail, [], `black detected in the tail with transitions on: ${JSON.stringify(tail)}`);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the composition opens and closes on the background colour", { skip, timeout: TIMEOUT }, async () => {
+  const dir = await tmpdir();
+  try {
+    const videoSrc = videoSrcName(SOURCE);
+    const faded = path.join(dir, "fades.mp4");
+    const plain = path.join(dir, "nofade.mp4");
+    await renderCompositionHtml(generateComposition(syntheticProject(), { videoSrc }), SOURCE, faded, videoSrc);
+    await renderCompositionHtml(generateComposition(syntheticProject({
+      style: { background: "#0b1020", padding: 56, radius: 24, shadow: true, openingFadeMs: 0, endingFadeMs: 0 }
+    }), { videoSrc }), SOURCE, plain, videoSrc);
+
+    // Control, seeded first: with the fades OFF the very first and very last
+    // frames are picture. Without this, "dark at the ends" would prove nothing —
+    // it could just be a composition that never showed anything.
+    const plainFirst = meanLevel(await frameByIndex(plain, 0));
+    const plainLast = meanLevel(await lastFrame(plain));
+    assert.ok(plainFirst > 60, `with the fade off the first frame is already dark (${plainFirst.toFixed(1)})`);
+    assert.ok(plainLast > 60, `with the fade off the last frame is already dark (${plainLast.toFixed(1)})`);
+
+    // Half one: the first frame is the background colour. #0b1020 is
+    // rgb(11,16,32), so a full-opacity fade has a mean of (11+16+32)/3 = 19.7 —
+    // a literal from the style, not a number the code told us.
+    const fadedFirst = meanLevel(await frameByIndex(faded, 0));
+    assert.ok(fadedFirst < 30, `the opening does not start on the background (mean ${fadedFirst.toFixed(1)}, expected about 19.7)`);
+
+    // ...and it opens UP from there: the fade is a ramp, not a stuck overlay.
+    const early = meanLevel(await frameByIndex(faded, 2));
+    const open = meanLevel(await frameByIndex(faded, 12)); // 400 ms in, past the 320 ms fade
+    assert.ok(fadedFirst < early && early < open, `the opening fade is not a ramp: ${fadedFirst.toFixed(1)} -> ${early.toFixed(1)} -> ${open.toFixed(1)}`);
+    assert.ok(Math.abs(open - plainFirst) / plainFirst < 0.9, "the picture never arrives after the opening fade");
+
+    // Half two: the ending fade takes the last frame back down to the background.
+    const fadedLast = meanLevel(await lastFrame(faded));
+    assert.ok(fadedLast < plainLast * 0.4,
+      `the closing fade did not darken the last frame (${fadedLast.toFixed(1)} vs ${plainLast.toFixed(1)} with the fade off)`);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

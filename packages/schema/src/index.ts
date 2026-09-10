@@ -48,6 +48,30 @@ export const CalloutSchema = z.object({
   y: z.number().min(0).max(1).default(0.85)
 });
 
+/**
+ * One word of a caption, in the capture's time base.
+ *
+ * WHY PER-WORD TIMESTAMPS NOW, WITH NO AUDIO: today they are filled by a
+ * deterministic synthetic distribution across the caption window (see
+ * `distributeWords` in @demomotion/core). When voiceover/TTS lands, the SAME
+ * field is filled from real audio alignment and the compositor does not change
+ * a line — it already reads word windows, not a paragraph. The structure is
+ * modelled once, correctly, instead of being migrated later.
+ */
+export const CaptionWordSchema = z.object({
+  text: z.string().min(1),
+  fromMs: z.number().nonnegative(),
+  toMs: z.number().positive()
+}).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
+
+/** A line of narration anchored in sourceMs, like zooms and callouts. */
+export const CaptionSchema = z.object({
+  fromMs: z.number().nonnegative(),
+  toMs: z.number().positive(),
+  text: z.string().min(1),
+  words: z.array(CaptionWordSchema).default([])
+}).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
+
 export const DemoProjectSchema = z.object({
   version: z.literal(1),
   title: z.string(),
@@ -60,16 +84,48 @@ export const DemoProjectSchema = z.object({
     background: z.string().default("#0b1020"),
     padding: z.number().min(0).max(300).default(56),
     radius: z.number().min(0).max(100).default(24),
-    shadow: z.boolean().default(true)
+    shadow: z.boolean().default(true),
+    /* --- Caption look. Restrained by default: this sits over software UI, where
+       theatrical captions read as cheap. Every knob can be dialled up. --- */
+    /** Idle word colour inside the caption band. */
+    captionColor: z.string().default("#c8d2e6"),
+    /** The word being spoken right now. Sober weight/colour emphasis. */
+    captionActiveColor: z.string().default("#ffffff"),
+    /** Thin underline under the active word. Same cyan as the click ring. */
+    captionAccent: z.string().default("#38bdf8"),
+    /** Extra scale on the active word. 0 = colour and weight only. */
+    captionEmphasis: z.number().min(0).max(0.4).default(0.06),
+    /** Multiplies the width-derived caption type size. */
+    captionScale: z.number().min(0.5).max(2.5).default(1),
+    /* --- Transitions. 0 means off for every one of them. --- */
+    /**
+     * Crossfade at each EditList cut. The junction the edit list already
+     * declares is exactly where a transition belongs, so no scene detection is
+     * needed. A dissolve has to BORROW material from the other side of the cut,
+     * so it is clamped by whatever handle exists.
+     */
+    cutTransitionMs: z.number().min(0).max(2000).default(180),
+    /** Fade up from the background at the start of the video. */
+    openingFadeMs: z.number().min(0).max(5000).default(320),
+    /** Fade down to the background at the end of the video. */
+    endingFadeMs: z.number().min(0).max(5000).default(420)
   }),
   actions: z.array(ActionSchema),
   zooms: z.array(ZoomSchema).default([]),
   /** The only time-editing structure. An empty list means nothing survives. */
   editList: z.array(EditSegmentSchema),
-  callouts: z.array(CalloutSchema).default([])
+  callouts: z.array(CalloutSchema).default([]),
+  /**
+   * Narration lines, anchored in sourceMs. Unlike `editList`, an ABSENT caption
+   * list is a legitimate "no captions", so it defaults to empty instead of
+   * making an old project invalid.
+   */
+  captions: z.array(CaptionSchema).default([])
 });
 
 export type DemoProject = z.infer<typeof DemoProjectSchema>;
 export type DemoAction = z.infer<typeof ActionSchema>;
 export type DemoZoom = z.infer<typeof ZoomSchema>;
 export type DemoEditSegment = z.infer<typeof EditSegmentSchema>;
+export type DemoCaption = z.infer<typeof CaptionSchema>;
+export type DemoCaptionWord = z.infer<typeof CaptionWordSchema>;

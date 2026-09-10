@@ -3,6 +3,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import type { DemoAction } from "@demomotion/schema";
+import { ScreencastCapture } from "./capture-adapter.js";
+
+/**
+ * Capture mode.
+ *
+ * `screencast` (default) is the deterministic CDP adapter: events and frames
+ * share one time base (spec §4). `record-video` is the legacy Playwright
+ * `recordVideo` path, kept ONLY so the misalignment it causes stays observable
+ * — its events are stamped with wall-clock `Date.now()` while the video is a
+ * variable-framerate webm whose start instant is not exposed.
+ */
+type CaptureMode = "screencast" | "record-video";
+
+function captureMode(): CaptureMode {
+  return process.env.DEMOMOTION_CAPTURE === "record-video" ? "record-video" : "screencast";
+}
 
 export interface Session {
   id: string;
@@ -13,13 +29,25 @@ export interface Session {
   startedAt: number;
   width: number;
   height: number;
+  fps: number;
+  mode: CaptureMode;
+  capture?: ScreencastCapture;
   actions: DemoAction[];
 }
 
 const sessions = new Map<string, Session>();
 
-function elapsed(session: Session) {
-  return Date.now() - session.startedAt;
+/**
+ * Current time on the session's capture time base, in ms.
+ *
+ * In screencast mode this is the timestamp of the most-recent screencast frame
+ * (`sourceMs`, spec §3/§4) — the SAME line the frames live on, so an event's
+ * `atMs` maps to a frame index by construction. In legacy record-video mode it
+ * falls back to wall-clock elapsed, which is exactly the mismatch being fixed.
+ */
+function nowSourceMs(s: Session): number {
+  if (s.mode === "screencast" && s.capture) return s.capture.nowSourceMs();
+  return Date.now() - s.startedAt;
 }
 
 /**
@@ -47,20 +75,40 @@ export async function startSession(opts: {
   width: number;
   height: number;
   headless: boolean;
+  fps?: number;
+  deviceScaleFactor?: number;
 }) {
   const id = crypto.randomUUID();
   const dir = path.resolve("data/sessions", id);
   await fs.mkdir(dir, { recursive: true });
 
+  const mode = captureMode();
+  const fps = opts.fps ?? (Number(process.env.DEMOMOTION_FPS) || 30);
+  const deviceScaleFactor =
+    opts.deviceScaleFactor ?? (Number(process.env.DEMOMOTION_DSF) || 1);
+
   const browser = await launchBrowser(opts.headless);
   const context = await browser.newContext({
     viewport: { width: opts.width, height: opts.height },
-    recordVideo: {
-      dir,
-      size: { width: opts.width, height: opts.height }
-    }
+    deviceScaleFactor,
+    // Legacy path records a VFR webm; screencast path captures via CDP instead.
+    ...(mode === "record-video"
+      ? { recordVideo: { dir, size: { width: opts.width, height: opts.height } } }
+      : {})
   });
   const page = await context.newPage();
+
+  let capture: ScreencastCapture | undefined;
+  if (mode === "screencast") {
+    capture = await ScreencastCapture.start({
+      page,
+      dir,
+      fps,
+      width: opts.width,
+      height: opts.height,
+      deviceScaleFactor
+    });
+  }
 
   const session: Session = {
     id,
@@ -71,6 +119,9 @@ export async function startSession(opts: {
     startedAt: Date.now(),
     width: opts.width,
     height: opts.height,
+    fps,
+    mode,
+    capture,
     actions: []
   };
   sessions.set(id, session);
@@ -81,6 +132,16 @@ export function getSession(id: string) {
   const session = sessions.get(id);
   if (!session) throw new Error(`Unknown session: ${id}`);
   return session;
+}
+
+/**
+ * Current time on the session's capture time base, in ms — the same base events
+ * are stamped in. Exported so a test can read the adapter's clock at the exact
+ * instant it triggers an independent visual signal, without duplicating the
+ * private time-base logic.
+ */
+export function captureTimeMs(id: string): number {
+  return nowSourceMs(getSession(id));
 }
 
 function assertAllowedUrl(rawUrl: string) {
@@ -96,14 +157,16 @@ function assertAllowedUrl(rawUrl: string) {
 export async function goto(id: string, url: string) {
   const safeUrl = assertAllowedUrl(url);
   const s = getSession(id);
-  const atMs = elapsed(s);
+  const atMs = nowSourceMs(s);
   await s.page.goto(safeUrl, { waitUntil: "networkidle" });
-  s.actions.push({ id: crypto.randomUUID(), type: "goto", atMs, durationMs: elapsed(s) - atMs, url: safeUrl });
+  s.actions.push({ id: crypto.randomUUID(), type: "goto", atMs, durationMs: nowSourceMs(s) - atMs, url: safeUrl });
 }
 
 export async function click(id: string, selector: string, label?: string) {
   const s = getSession(id);
-  const atMs = elapsed(s);
+  // sourceMs = timestamp of the most-recent screencast frame (spec §4). Anchored
+  // BEFORE the click so it shares the frames' time base by construction.
+  const atMs = nowSourceMs(s);
   const locator = s.page.locator(selector).first();
   const box = await locator.boundingBox();
   await locator.click();
@@ -111,7 +174,7 @@ export async function click(id: string, selector: string, label?: string) {
     id: crypto.randomUUID(),
     type: "click",
     atMs,
-    durationMs: elapsed(s) - atMs,
+    durationMs: nowSourceMs(s) - atMs,
     selector,
     label,
     x: box ? (box.x + box.width / 2) / s.width : undefined,
@@ -121,7 +184,7 @@ export async function click(id: string, selector: string, label?: string) {
 
 export async function fill(id: string, selector: string, value: string, label?: string) {
   const s = getSession(id);
-  const atMs = elapsed(s);
+  const atMs = nowSourceMs(s);
   const locator = s.page.locator(selector).first();
   const box = await locator.boundingBox();
   await locator.fill(value);
@@ -129,7 +192,7 @@ export async function fill(id: string, selector: string, value: string, label?: 
     id: crypto.randomUUID(),
     type: "fill",
     atMs,
-    durationMs: elapsed(s) - atMs,
+    durationMs: nowSourceMs(s) - atMs,
     selector,
     value: "[redacted]",
     label,
@@ -140,7 +203,7 @@ export async function fill(id: string, selector: string, value: string, label?: 
 
 export async function wait(id: string, ms: number) {
   const s = getSession(id);
-  const atMs = elapsed(s);
+  const atMs = nowSourceMs(s);
   await s.page.waitForTimeout(ms);
   s.actions.push({ id: crypto.randomUUID(), type: "wait", atMs, durationMs: ms });
 }
@@ -150,23 +213,46 @@ export async function screenshot(id: string, name = "screen.png") {
   const safe = name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const file = path.join(s.dir, safe);
   await s.page.screenshot({ path: file, fullPage: false });
-  s.actions.push({ id: crypto.randomUUID(), type: "screenshot", atMs: elapsed(s), durationMs: 0, label: safe });
+  s.actions.push({ id: crypto.randomUUID(), type: "screenshot", atMs: nowSourceMs(s), durationMs: 0, label: safe });
   return file;
 }
 
 export async function stopSession(id: string) {
   const s = getSession(id);
-  const video = s.page.video();
-  const durationMs = elapsed(s);
 
-  await s.context.close();
-  const videoPath = video ? await video.path() : null;
-  await s.browser.close();
+  let videoPath: string | null;
+  let durationMs: number;
+  let width = s.width;
+  let height = s.height;
+  let fps = s.fps;
+  let frameCount: number | undefined;
+
+  if (s.mode === "screencast" && s.capture) {
+    // Assemble the CFR artifact BEFORE tearing the browser down (the CDP
+    // session and the on-disk frames both need the context alive).
+    const result = await s.capture.stop();
+    videoPath = result.artifact.path;
+    durationMs = result.durationMs;
+    width = result.width;
+    height = result.height;
+    fps = result.fps;
+    frameCount = result.frameCount;
+    await s.context.close();
+    await s.browser.close();
+  } else {
+    const video = s.page.video();
+    durationMs = nowSourceMs(s);
+    await s.context.close();
+    videoPath = video ? await video.path() : null;
+    await s.browser.close();
+  }
 
   const manifest = {
     id: s.id,
-    width: s.width,
-    height: s.height,
+    width,
+    height,
+    fps,
+    frameCount,
     durationMs,
     videoPath,
     actions: s.actions
@@ -182,7 +268,7 @@ export function status(id: string) {
   const s = getSession(id);
   return {
     id: s.id,
-    elapsedMs: elapsed(s),
+    elapsedMs: nowSourceMs(s),
     url: s.page.url(),
     actions: s.actions.length,
     viewport: { width: s.width, height: s.height }
@@ -191,17 +277,17 @@ export function status(id: string) {
 
 export async function scroll(id: string, deltaY: number, deltaX = 0) {
   const s = getSession(id);
-  const atMs = elapsed(s);
+  const atMs = nowSourceMs(s);
   await s.page.mouse.wheel(deltaX, deltaY);
   await s.page.waitForTimeout(150);
-  s.actions.push({ id: crypto.randomUUID(), type: "scroll", atMs, durationMs: elapsed(s) - atMs, deltaX, deltaY });
+  s.actions.push({ id: crypto.randomUUID(), type: "scroll", atMs, durationMs: nowSourceMs(s) - atMs, deltaX, deltaY });
 }
 
 export async function keypress(id: string, key: string) {
   const s = getSession(id);
-  const atMs = elapsed(s);
+  const atMs = nowSourceMs(s);
   await s.page.keyboard.press(key);
-  s.actions.push({ id: crypto.randomUUID(), type: "keypress", atMs, durationMs: elapsed(s) - atMs, key });
+  s.actions.push({ id: crypto.randomUUID(), type: "keypress", atMs, durationMs: nowSourceMs(s) - atMs, key });
 }
 
 export async function inspectPage(id: string, limit = 80) {

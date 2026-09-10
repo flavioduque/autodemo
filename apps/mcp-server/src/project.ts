@@ -15,7 +15,9 @@ export async function buildProject(captureManifestPath: string, title: string): 
     sourceVideo: path.resolve(raw.videoPath),
     width: raw.width,
     height: raw.height,
-    fps: 30,
+    // The capture adapter guarantees a constant fps; carry it so the compositor's
+    // sourceMs -> frame index math matches the CFR grid the video was built on.
+    fps: Number.isFinite(raw.fps) && raw.fps > 0 ? raw.fps : 30,
     durationMs: raw.durationMs,
     style: { background: "#0b1020", padding: 56, radius: 24, shadow: true },
     actions: raw.actions,

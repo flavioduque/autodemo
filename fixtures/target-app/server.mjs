@@ -16,10 +16,24 @@ const TYPES = {
   ".svg": "image/svg+xml"
 };
 
+/**
+ * Named routes.
+ *
+ * `/` is the bare CRM. `/embedded` is the SAME CRM one frame deeper: a host
+ * document whose only own content is a cookie banner, with the product inside a
+ * full-viewport <iframe>. That is the shape of the real site that showed the
+ * tooling was blind to iframe content.
+ */
+const ROUTES = {
+  "/": "index.html",
+  "/embedded": "embedded.html",
+  "/embedded/": "embedded.html"
+};
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
-    const rel = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+    const rel = ROUTES[url.pathname] ?? (url.pathname === "/" ? "index.html" : url.pathname.slice(1));
     const file = path.resolve(ROOT, rel);
     if (!file.startsWith(ROOT + path.sep) && file !== path.join(ROOT, "index.html")) {
       res.writeHead(403).end("Forbidden");

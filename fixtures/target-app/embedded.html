@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Acme CRM — Embedded Host</title>
+<link rel="icon" href="data:," />
+<style>
+  /*
+    Mirrors the shape of the real production page that exposed the blindness:
+    the host document owns almost nothing — a cookie banner and some chrome —
+    and the WHOLE product lives inside an <iframe>. A tool that only looks at
+    the main frame sees three controls and misses the application entirely.
+
+    The frame is deliberately NOT flush with the viewport origin (48px of host
+    rail on the left, the 72px banner on top). An iframe at 0,0 would make any
+    coordinate assertion vacuous: frame-relative and viewport-relative numbers
+    would be identical and a test could not tell a correct implementation from
+    a broken one.
+  */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #0b1220; }
+
+  /*
+    An <iframe> is a replaced element: `left`/`right` do NOT stretch it, an
+    `auto` width falls back to the intrinsic 300x150. The size is therefore
+    stated explicitly.
+  */
+  #app-frame {
+    position: absolute;
+    top: 72px;
+    left: 48px;
+    width: calc(100% - 48px);
+    height: calc(100% - 72px);
+    border: 0;
+    display: block;
+  }
+
+  /* Host chrome: decorative, no interactive elements of its own. */
+  .rail {
+    position: fixed;
+    top: 72px; left: 0; bottom: 0;
+    width: 48px;
+    background: linear-gradient(#1d2939, #0b1220);
+  }
+
+  .cookie {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 72px;
+    z-index: 100;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 0 20px;
+    background: #101828;
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+  }
+  .cookie__text { flex: 1; }
+  .cookie__btn {
+    border: 0; border-radius: 8px; padding: 10px 16px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .cookie__btn--accept { background: #2563eb; color: #ffffff; }
+  .cookie__btn--decline { background: #344054; color: #ffffff; }
+  .cookie__link { color: #93c5fd; }
+</style>
+</head>
+<body>
+  <!-- The only interactive controls in the HOST frame: a cookie banner. -->
+  <div class="cookie" id="cookie-banner" data-testid="host-cookie-banner">
+    <span class="cookie__text">We use cookies. <a class="cookie__link" href="#privacy" data-testid="host-privacy-link">Privacy policy</a></span>
+    <button class="cookie__btn cookie__btn--decline" id="cookie-decline" data-testid="host-cookie-decline">Decline</button>
+    <button class="cookie__btn cookie__btn--accept" id="cookie-accept" data-testid="host-cookie-accept">Accept</button>
+  </div>
+  <div class="rail"></div>
+
+  <!--
+    The product. The same document `/` serves, so every selector in this
+    fixture's README keeps working — one frame deeper.
+  -->
+  <iframe id="app-frame" src="./index.html" title="Acme CRM"></iframe>
+
+  <script>
+    // Dismissing the banner is observable from the host frame only, which keeps
+    // the two frames distinguishable in a test.
+    const dismiss = () => document.getElementById("cookie-banner").remove();
+    document.getElementById("cookie-accept").addEventListener("click", dismiss);
+    document.getElementById("cookie-decline").addEventListener("click", dismiss);
+  </script>
+</body>
+</html>

@@ -58,6 +58,16 @@ const EXPECTED_TOOLS = [
   "project_build", "project_update", "demo_finalize", "render_video"
 ];
 
+/**
+ * Every tool this file actually CALLED over the wire, filled in by `callTool`.
+ *
+ * Publishing a tool in tools/list and never invoking it is not coverage: four of
+ * the fifteen above were listed and never called, and `browser_inspect` — one of
+ * the four — was broken in exactly the runtime this test spawns. The last test
+ * in the file turns that gap into a failing assertion.
+ */
+const INVOKED = new Set<string>();
+
 type ToolResult = { isError: boolean; text: string; payload: any };
 
 /** Longest a single JSON-RPC call may take before the test calls it a hang. */
@@ -151,6 +161,7 @@ class McpStdioClient {
    */
   async callTool(name: string, args: Record<string, unknown>, timeoutMs?: number): Promise<ToolResult> {
     step(`-> ${name}`);
+    INVOKED.add(name);
     const result = await this.request("tools/call", { name, arguments: args }, timeoutMs);
     step(`<- ${name}${result.isError === true ? " (isError)" : ""}`);
     const text = result?.content?.[0]?.text ?? "";
@@ -247,6 +258,8 @@ async function repoSessionDirs(): Promise<string[]> {
 
 const WIDTH = 1280;
 const HEIGHT = 720;
+/** Passed to browser_screenshot; it also becomes that action's label. */
+const SCREENSHOT_NAME = "e2e-step.png";
 
 test("a real MCP client drives capture, build, edit and render end to end over stdio",
   { skip, timeout: TIMEOUT }, async () => {
@@ -279,6 +292,24 @@ test("a real MCP client drives capture, build, edit and render end to end over s
     const navigated = await client.callOk("browser_goto", { sessionId, url: `${fixture.origin}/` });
     assert.deepEqual(navigated, { ok: true, url: `${fixture.origin}/` });
 
+    // --- browser_inspect, over the wire ----------------------------------
+    // The agent's first move on a real page, and the tool that was dead under
+    // `tsx` — which is how this server is spawned three lines above. Calling it
+    // in-process would have proved nothing about that; the child is the product.
+    const inspected = await client.callOk("browser_inspect", { sessionId, limit: 200 });
+    assert.equal(inspected.url, `${fixture.origin}/`);
+    assert.deepEqual(inspected.skippedFrames, [], "a frame could not be read");
+    const inspectedSelectors = (inspected.elements as Array<any>).map((e) => e.selector);
+    for (const selector of ['[data-testid="new-client-button"]', '[data-testid="client-name-input"]',
+      '[data-testid="save-button"]']) {
+      assert.ok(inspectedSelectors.includes(selector), `browser_inspect missed ${selector}`);
+    }
+    // Every element says which frame it came from; this page has exactly one.
+    assert.equal(inspected.frameCount, 1);
+    for (const element of inspected.elements as Array<any>) {
+      assert.equal(element.frameUrl, `${fixture.origin}/`, "an element came back with no frame attribution");
+    }
+
     // Labels matter: project_build seeds the caption skeleton from them, so the
     // exact strings below are asserted again further down, on the built project.
     const labels = ["New client", "Client name", "Client e-mail", "Client phone", "Save client"];
@@ -293,9 +324,19 @@ test("a real MCP client drives capture, build, edit and render end to end over s
     await client.callOk("browser_click", { sessionId, selector: '[data-testid="save-button"]', label: labels[4] });
     await client.callOk("browser_wait", { sessionId, ms: 900 });
 
+    // --- browser_scroll / browser_keypress / browser_screenshot ----------
+    // The remaining three tools that tools/list published and nothing ever
+    // called. Each one has to answer over the wire AND leave its action behind.
+    assert.deepEqual(await client.callOk("browser_scroll", { sessionId, deltaY: 400 }), { ok: true });
+    assert.deepEqual(await client.callOk("browser_keypress", { sessionId, key: "Escape" }), { ok: true });
+    const shot = await client.callOk("browser_screenshot", { sessionId, name: SCREENSHOT_NAME });
+    assert.ok(String(shot.path).startsWith(cwd), `the screenshot escaped the test cwd: ${shot.path}`);
+    assert.ok((await fs.stat(shot.path)).size > 1000, `browser_screenshot wrote only ${(await fs.stat(shot.path)).size} bytes`);
+
     const live = await client.callOk("session_status", { sessionId });
-    // 1 goto + 2 clicks + 3 fills + 5 waits.
-    assert.equal(live.actions, 11, `session_status counted ${live.actions} actions, expected the 11 that were sent`);
+    // 1 goto + 2 clicks + 3 fills + 5 waits + 1 scroll + 1 keypress + 1 screenshot.
+    // browser_inspect is a read: it deliberately records nothing.
+    assert.equal(live.actions, 14, `session_status counted ${live.actions} actions, expected the 14 that were sent`);
     assert.deepEqual(live.viewport, { width: WIDTH, height: HEIGHT });
 
     const capture = await client.callOk("session_stop", { sessionId });
@@ -304,6 +345,10 @@ test("a real MCP client drives capture, build, edit and render end to end over s
     assert.ok(capture.durationMs > 2500, `capture is only ${capture.durationMs} ms long`);
     assert.ok(String(capture.manifestPath).startsWith(cwd), `capture escaped the test cwd: ${capture.manifestPath}`);
     // The typed values must never reach the manifest.
+    const types = (capture.actions as Array<any>).map((a) => a.type);
+    for (const type of ["scroll", "keypress", "screenshot"]) {
+      assert.ok(types.includes(type), `no ${type} action reached the manifest: ${types.join(", ")}`);
+    }
     const filled = (capture.actions as Array<any>).filter((a) => a.type === "fill");
     assert.equal(filled.length, 3);
     for (const action of filled) assert.equal(action.value, "[redacted]", "a typed value survived into the manifest");
@@ -319,7 +364,9 @@ test("a real MCP client drives capture, build, edit and render end to end over s
     // The identity edit: one segment covering the whole capture, at speed 1.
     assert.deepEqual(project.editList, [{ sourceFromMs: 0, sourceToMs: capture.durationMs, speed: 1 }]);
     // The caption skeleton is seeded from the labels, in order, already timed.
-    assert.deepEqual((project.captions as Array<any>).map((c) => c.text), labels);
+    // `browser_screenshot` stamps its file name as the action's label, so it
+    // seeds a line too — current behaviour, asserted rather than assumed.
+    assert.deepEqual((project.captions as Array<any>).map((c) => c.text), [...labels, SCREENSHOT_NAME]);
     for (const caption of project.captions as Array<any>) {
       assert.ok(caption.words.length > 0, `caption "${caption.text}" got no words`);
       assert.equal(caption.words[0].fromMs, caption.fromMs, "the first word does not start with its caption");
@@ -465,4 +512,16 @@ test("demo_finalize takes a live session all the way to an MP4 in one call",
 
   assert.deepEqual(await repoSessionDirs(), sessionsBefore,
     "the run left session directories behind in the repo's data/");
+});
+
+test("every tool the server publishes was actually called over the wire",
+  { skip }, async () => {
+  // The gap this closes: tools/list published fifteen tools and the flow above
+  // exercised ten. The five that were never invoked included browser_inspect,
+  // which was broken in the very runtime this file spawns. Listing is not
+  // calling, and only calling finds that kind of defect.
+  const missing = EXPECTED_TOOLS.filter((name) => !INVOKED.has(name));
+  assert.deepEqual(missing, [], `published but never invoked: ${missing.join(", ")}`);
+  assert.equal(INVOKED.size, EXPECTED_TOOLS.length,
+    `invoked ${[...INVOKED].sort().join(", ")}, expected exactly the ${EXPECTED_TOOLS.length} published tools`);
 });

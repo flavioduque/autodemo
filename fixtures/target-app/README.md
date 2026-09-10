@@ -11,6 +11,20 @@ pnpm fixture          # a partir da raiz do repositório
 
 Sobe em **http://127.0.0.1:4321** (porta fixa; sobrescreva com `FIXTURE_PORT`).
 
+## Rotas
+
+| Rota        | O que serve                                                        |
+| ----------- | ------------------------------------------------------------------ |
+| `/`         | O CRM direto, num único frame.                                     |
+| `/embedded` | Uma página hospedeira cujo conteúdo é o MESMO CRM dentro de um `<iframe>`. |
+
+`/embedded` reproduz o formato do site real que expôs a cegueira a iframes: o
+documento hospedeiro só tem um banner de cookies (três controles) e o produto
+inteiro vive um frame abaixo. O iframe é deliberadamente deslocado da origem
+(48px de trilho à esquerda, 72px de banner no topo) — um iframe colado em 0,0
+tornaria qualquer asserção de coordenada vazia, porque coordenada relativa ao
+frame e relativa ao viewport seriam o mesmo número.
+
 ## O que a página oferece
 
 - **Carimbo de tempo decorrido** (`data-testid="elapsed-clock"`): dígitos grandes,
@@ -41,3 +55,14 @@ Sobe em **http://127.0.0.1:4321** (porta fixa; sobrescreva com `FIXTURE_PORT`).
 | `success-message`      | mensagem de sucesso              |
 | `elapsed-clock`        | carimbo de tempo                 |
 | `corner-tl/tr/bl/br`   | marcadores de canto              |
+
+### Só em `/embedded` (frame hospedeiro)
+
+| `data-testid`          | Elemento                         |
+| ---------------------- | -------------------------------- |
+| `host-cookie-banner`   | banner de cookies do hospedeiro  |
+| `host-cookie-accept`   | botão "Accept" (remove o banner) |
+| `host-cookie-decline`  | botão "Decline" (remove o banner)|
+| `host-privacy-link`    | link "Privacy policy"            |
+
+O `<iframe>` em si é `#app-frame`.

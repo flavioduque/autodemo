@@ -1,0 +1,11 @@
+node_modules
+dist
+.out
+*.mp4
+*.webm
+*.mov
+*.gif
+.env
+.DS_Store
+data/sessions/*
+!data/sessions/.gitkeep

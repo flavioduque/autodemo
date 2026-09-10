@@ -36,3 +36,5 @@ export function compactInteractiveElements(items: Array<{tag:string; text:string
     .filter((i) => i.text || i.role || ["input","button","a","select","textarea"].includes(i.tag))
     .slice(0, limit);
 }
+
+export * from "./editlist.ts";

@@ -24,10 +24,21 @@ export const ZoomSchema = z.object({
   scale: z.number().min(1).max(3).default(1.35)
 });
 
-export const TrimSchema = z.object({
-  fromMs: z.number().nonnegative(),
-  toMs: z.number().positive()
-}).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
+/**
+ * One kept slice of the capture, played at its own speed (spec section 3).
+ *
+ * Output duration of a segment is `(sourceToMs - sourceFromMs) / speed`, and the
+ * cumulative sum of those durations places each segment in the output timeline.
+ * Cuts are implicit: source material inside no segment was cut. There is
+ * deliberately no separate `trims` field — trims and speed ramps are the same
+ * structure, so a cut that has no effect on the render is impossible to express.
+ */
+export const EditSegmentSchema = z.object({
+  sourceFromMs: z.number().nonnegative(),
+  sourceToMs: z.number().positive(),
+  /** 1 = normal, 2.5 = fast, 0.5 = slow motion. Never 0 or negative. */
+  speed: z.number().positive().default(1)
+}).refine((v) => v.sourceToMs > v.sourceFromMs, "sourceToMs must be greater than sourceFromMs");
 
 export const CalloutSchema = z.object({
   fromMs: z.number().nonnegative(),
@@ -53,10 +64,12 @@ export const DemoProjectSchema = z.object({
   }),
   actions: z.array(ActionSchema),
   zooms: z.array(ZoomSchema).default([]),
-  trims: z.array(TrimSchema).default([]),
+  /** The only time-editing structure. An empty list means nothing survives. */
+  editList: z.array(EditSegmentSchema),
   callouts: z.array(CalloutSchema).default([])
 });
 
 export type DemoProject = z.infer<typeof DemoProjectSchema>;
 export type DemoAction = z.infer<typeof ActionSchema>;
 export type DemoZoom = z.infer<typeof ZoomSchema>;
+export type DemoEditSegment = z.infer<typeof EditSegmentSchema>;

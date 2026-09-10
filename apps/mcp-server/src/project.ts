@@ -20,7 +20,9 @@ export async function buildProject(captureManifestPath: string, title: string): 
     style: { background: "#0b1020", padding: 56, radius: 24, shadow: true },
     actions: raw.actions,
     zooms: buildAutoZooms(raw.actions, raw.durationMs),
-    trims: [],
+    // Identity edit: one segment over the whole capture at normal speed. The
+    // render is unchanged until someone actually edits the timeline.
+    editList: [{ sourceFromMs: 0, sourceToMs: raw.durationMs, speed: 1 }],
     callouts: []
   });
 
@@ -33,7 +35,7 @@ export type ProjectPatch = {
   title?: DemoProject["title"];
   style?: Partial<DemoProject["style"]>;
   zooms?: DemoProject["zooms"];
-  trims?: DemoProject["trims"];
+  editList?: DemoProject["editList"];
   callouts?: DemoProject["callouts"];
 };
 

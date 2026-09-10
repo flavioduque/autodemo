@@ -86,12 +86,12 @@ function createServer() {
 
 
   server.registerTool("browser_inspect", {
-    description: "Inspect the current page and return a compact list of interactive elements with stable selector candidates.",
+    description: "Inspect the current page and return a compact list of interactive elements with stable selector candidates. Covers EVERY frame, not just the top document: each element carries the `frameUrl` it came from, and a frame that could not be read is reported in `skippedFrames` instead of failing the call.",
     inputSchema: z.object({ sessionId: z.string(), limit: z.number().int().min(1).max(200).default(80) })
   }, async ({sessionId, limit}) => result(await inspectPage(sessionId, limit)));
 
   server.registerTool("browser_scroll", {
-    description: "Scroll the recorded page and persist the action in the timeline.",
+    description: "Scroll the recorded page and persist the action in the timeline. When the top document has nothing left to scroll, the wheel is aimed at the largest frame that does.",
     inputSchema: z.object({ sessionId: z.string(), deltaY: z.number().int().min(-10000).max(10000), deltaX: z.number().int().min(-10000).max(10000).default(0) })
   }, async ({sessionId, deltaY, deltaX}) => { await scroll(sessionId, deltaY, deltaX); return result({ok:true}); });
 
@@ -109,7 +109,7 @@ function createServer() {
   });
 
   server.registerTool("browser_click", {
-    description: "Click a visible element while recording. Prefer stable data-testid or accessible selectors.",
+    description: "Click a visible element while recording. Prefer stable data-testid or accessible selectors. The selector is resolved across frames — main frame first, then the other frames in attachment order, first match wins — so a control inside an <iframe> is reachable with the same plain selector.",
     inputSchema: z.object({
       sessionId: z.string(),
       selector: z.string().min(1),
@@ -121,7 +121,7 @@ function createServer() {
   });
 
   server.registerTool("browser_fill", {
-    description: "Fill an input while recording. The typed value is redacted from the timeline manifest.",
+    description: "Fill an input while recording. The typed value is redacted from the timeline manifest. The selector is resolved across frames on the same rule as browser_click.",
     inputSchema: z.object({
       sessionId: z.string(),
       selector: z.string().min(1),

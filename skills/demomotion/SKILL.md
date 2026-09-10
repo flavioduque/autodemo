@@ -1,167 +1,241 @@
 ---
 name: demomotion
-description: Autonomously create polished product demo videos by operating a web application through DemoMotion MCP, recording the workflow, generating a cinematic interaction timeline, and rendering the final video with Remotion.
+description: Autonomously create polished product demo videos by operating a web application through the DemoMotion MCP server — recording a deterministic capture, compiling an editable project, cutting dead time, writing word-by-word narration, and rendering the final MP4 with the HyperFrames compositor.
 ---
 
 # DemoMotion Agent Skill
 
-## Objective
+You operate a product, then you edit the recording as data. Nothing is baked into
+the pixels: every creative decision lives in `project.json` and can be changed and
+re-rendered without recording again.
 
-Turn a product URL plus a communication objective into a finished polished demo video with minimal or no human editing.
+## The pipeline
 
-The agent owns the whole workflow:
-research → demo plan → capture → interaction → timeline → visual treatment → render → validation.
+```
+session_start → browser_goto / click / fill / wait → session_stop
+             → project_build → (project_update)* → render_video
+```
 
-## Mandatory workflow
+`demo_finalize` collapses `session_stop → project_build → render_video` into one
+call on a live session. Use it only for a throwaway or a smoke check: it renders
+the automatic first pass, so no cuts and no rewritten narration. Any demo meant
+for a human goes through `project_update` at least once.
 
-### 1. Understand the demo objective
+The compositor is **HyperFrames** (HTML + GSAP, rendered to H.264). You never
+author it. You author `project.json`.
 
-Determine:
-- target audience
-- product capability to demonstrate
-- target duration
-- output aspect ratio
-- critical user journey
-- sensitive fields that must not appear in the recording
+## Two time bases — learn these before editing
 
-Do not wander through unrelated product areas.
+- `sourceMs` — time in the raw capture. Immutable. Everything you author is
+  anchored here: zooms, callouts, captions, cursor keyframes, edit segments.
+- `outputMs` — time in the final video. Derived from the `editList`.
 
-### 2. Plan the interaction before recording
+You never write `outputMs`. Cut a stretch and every zoom, caption and callout
+after it is reprojected automatically. Anything whose `sourceMs` fell inside a
+cut simply does not appear. This is why cutting is safe.
 
-Create a concise sequence of scenes.
+---
 
-Each scene must have:
-- purpose
-- action
-- expected visible state
-- estimated duration
+## 1. Fix the objective
 
-Prefer 3–7 scenes for short product demos.
+Decide before recording: audience, the one capability being shown, target
+duration, the critical path through the UI, and which fields must never be on
+screen. Do not wander into unrelated product areas.
 
-### 3. Start recording
+Frame size is decided here too and cannot be changed later: the video is rendered
+at the session's `width` x `height`. There is no reframing pass, so a vertical cut
+means recording a vertical session.
 
-Call `session_start`.
+## 2. Plan 3–7 scenes
 
-Default:
-- 1920x1080
-- visible browser (`headless: false`) during local production
+Each scene: purpose · action · expected visible state · rough duration.
+A demo with more than seven scenes is two demos.
 
-### 4. Operate the product
+## 3. Record
 
-Use:
-- `browser_goto`
-- `browser_click`
-- `browser_fill`
-- `browser_wait`
+`session_start` — defaults `1920x1080`, `headless: false` for local production.
+Returns `sessionId`; every browser tool needs it.
+
+- `browser_goto` — `http`/`https` only, subject to `DEMOMOTION_ALLOWED_HOSTS`.
+- `browser_click` / `browser_fill` — record normalized target coordinates. These
+  drive both the auto-zoom and the synthetic cursor.
+- `browser_wait` — 50–30000 ms. Only for a real transition or deliberate pacing.
+- `browser_scroll`, `browser_keypress` — same recording rules.
+- `browser_inspect` — inventory of interactive elements with stable selector
+  candidates. Use it instead of guessing a selector.
+- `browser_screenshot`, `session_status` — checkpoints. Do not push on blindly
+  after a navigation error, an unexpected dialog or a missing element.
 
 Rules:
-- prefer stable selectors
-- never expose passwords, tokens or secrets
-- keep pauses short
-- avoid meaningless mouse movement
-- wait only for real UI transitions
-- make the recorded workflow deterministic
+- Prefer `[data-testid=...]`, then a role/accessible name. Never an nth-child chain.
+- **Always pass `label`.** `project_build` turns every labelled action into a
+  caption line already timed. An action with no label produces no caption line.
+  Write the label as a line of narration, not as the button's text: `label:
+  "One form adds the client"` beats `label: "Save"`.
+- Never type a password, token or key. `browser_fill` redacts the value from
+  `capture.json`, but the target app still *renders* it. Use seeded demo data.
+- Keep pauses short. Dead time is cheaper to cut than to sit through, but it is
+  cheapest not to record.
 
-### 5. Inspect if uncertain
+`session_stop` → writes `capture.json` (constant fps, frame ⇔ time exact) and
+returns its path plus `durationMs`. Keep both.
 
-Use `browser_screenshot` to validate UI state.
+## 4. `project_build`
 
-Do not continue blindly after navigation errors, unexpected dialogs, failed authentication, or missing elements.
+Compiles `capture.json` into `project.json` and returns the whole project. What
+it seeds:
 
-### 6. Finish capture
+- `editList` — one identity segment `{sourceFromMs: 0, sourceToMs: durationMs,
+  speed: 1}`. Nothing is cut yet.
+- `zooms` — one window per click/fill that has coordinates. A click gets
+  `[atMs-220, atMs+1200]` at scale `1.36`; a fill gets `[atMs-220, atMs+1450]` at
+  scale `1.22`. Two windows merge when they start within 120 ms of each other and
+  their centres are less than 0.16 apart in normalized coordinates.
+- `captions` — a **skeleton**: one line per labelled action, opening at the
+  action's instant, holding up to 2200 ms, hard-capped by the next labelled
+  action. Words are already split proportionally to token length, floor 90 ms.
+- `callouts` — empty.
 
-Call `session_stop`.
+Treat all of it as a first pass.
 
-Preserve the returned `capture.json` path.
+## 5. `project_update` — the editing pass
 
-### 7. Build editing project
+A patch against `project.json`. Omitted fields keep their value. `style` is
+**merged** field by field; `zooms`, `editList`, `callouts` and `captions` are
+**replaced wholesale** — send the complete array you want, not a delta.
 
-Call `project_build`.
+### `editList` — cuts and speed ramps, one model
 
-The project builder generates initial zooms around meaningful clicks and form interactions.
+```json
+[{"sourceFromMs": 0,     "sourceToMs": 4200,  "speed": 1},
+ {"sourceFromMs": 7800,  "sourceToMs": 15000, "speed": 2}]
+```
 
-Treat this generated timeline as an editable first pass, not immutable output.
+Segments are kept slices of the capture, in order. **A cut is the gap between two
+segments** — there is no separate `trims` field, so a cut that does not change the
+render is impossible to express. `speed` is a constant ramp: `2` = double speed,
+`0.5` = slow motion. Never `0`.
 
-### 8. Render with Remotion
+Output length of a segment is `(sourceToMs - sourceFromMs) / speed`; the video is
+the sum of them.
 
-Call `render_video`.
+Cutting dead time is a real editing move — **use it**. Typical targets: the wait
+after `browser_goto`, the gap while a form is open and nothing is happening, a
+slow network round trip (ramp it at `2`–`3` instead of cutting, so the user still
+sees the loading state).
 
-The renderer should:
-- frame the product cleanly
-- use smooth motion
-- focus attention on the active UI region
-- avoid excessive zoom
-- maintain readable UI scale
-- use product-brand presets when available
+Rules:
+- **Place cuts BETWEEN captions.** Everything anchored in `sourceMs` follows one
+  rule: if its **start instant** is cut, it disappears entirely; if the cut lands
+  **inside** it, it is clipped at the cut. For a caption that means the line ends
+  mid-sentence and every word after the cut is dropped. Read the caption windows
+  first, then pick a cut boundary that lies in a gap between two of them.
+- The same rule governs zooms, callouts and the cursor. A zoom whose start was
+  cut simply never happens — usually what you want; make sure it is.
+- An empty `editList` keeps no material and `render_video` refuses outright.
 
-### 9. Validate
+### `captions` — word-by-word narration
 
-Check:
-- final file exists
-- duration is reasonable
-- no credentials are visible
-- important actions are legible
-- zooms do not cut off the target
-- no unnecessary dead time exists
+```json
+[{"fromMs": 900, "toMs": 3100, "text": "Adding a client is one form."}]
+```
 
-If validation fails, modify the project and rerender.
+`words` is optional: send only `text` and the compiler keeps it as one line
+without a highlight; send `words` (`{text, fromMs, toMs}`) and each word is
+highlighted as it is spoken. **The skeleton's timings are already correct — your
+job is the prose, not the clock.** Rewrite `text` and leave `fromMs`/`toMs` where
+`project_build` put them unless you have a reason.
 
-## Editing heuristics
+Overlapping lines are truncated automatically (the earlier one ends where the next
+begins), so two captions are never on screen at once.
 
-### Zoom
+Writing the narration:
+- One idea per line. 3–8 words. If a line needs a comma, it is two lines.
+- Present tense, active voice. "The client is saved", not "We have now saved…".
+- Say the **outcome**, not the mechanic. Never "click the Save button" — the
+  cursor and the pulse already show that.
+- Do not narrate what is obviously on screen. Narrate what it *means*.
+- Roughly two words per second of line. Faster than that and nobody reads it.
+- No product-marketing adjectives. This is a demo, not a landing page.
 
-Good default:
-- scale: 1.20–1.45
-- enter: 180–300ms
-- hold around action
-- exit: 220–350ms
+### `zooms`
 
-Avoid repeated aggressive punch zooms.
+`{fromMs, toMs, x, y, scale}`, `x`/`y` normalized `0–1`, `scale` `1–3`.
 
-### Pacing
+The camera ramps in over `min(250 ms, 30% of the window)` and out over
+`min(300 ms, 30%)`. A window under ~800 ms is therefore almost entirely ramp and
+reads as a twitch — either widen it or drop it.
 
-For SaaS demos:
-- navigation: fast
-- important result state: slower
-- typing: keep concise
-- loading: cut or accelerate when possible
+- Keep `scale` in `1.15–1.45`. Above ~1.6 the UI stops being legible.
+- Do not punch-zoom every click. Zoom for the action that carries the point.
+- Leave the result state wide enough to be read.
 
-### Cursor
+### `callouts`
 
-A future cursor metadata adapter may provide a fully independent cursor layer.
-Until then, focus camera motion around known interaction coordinates captured from Playwright.
+`{fromMs, toMs, text, x, y}`, position normalized (default `0.5`, `0.85`). Use
+sparingly, and never to repeat what a caption already says.
 
-## Capture backend strategy
+### `style`
 
-Preferred order:
+| field | default | range | note |
+|---|---|---|---|
+| `background` | `#0b1020` | any CSS colour | also the colour the fades resolve to |
+| `padding` | `56` | 0–300 | frame inset around the capture |
+| `radius` | `24` | 0–100 | |
+| `shadow` | `true` | | |
+| `captionColor` | `#c8d2e6` | | idle word |
+| `captionActiveColor` | `#ffffff` | | word being spoken |
+| `captionAccent` | `#38bdf8` | | underline under the active word |
+| `captionEmphasis` | `0.06` | 0–0.4 | extra scale on the active word; `0` = colour only |
+| `captionScale` | `1` | 0.5–2.5 | multiplies the width-derived type size |
+| `cutTransitionMs` | `180` | 0–2000 | crossfade at every `editList` cut |
+| `openingFadeMs` | `320` | 0–5000 | fade up from `background` |
+| `endingFadeMs` | `420` | 0–5000 | fade down to `background` |
 
-1. Remotion Canvas Capture adapter for web pages when high-resolution browser capture is available.
-2. Playwright video backend for deterministic browser automation and MVP compatibility.
-3. Native desktop capture adapter for desktop applications.
+`0` turns any of the three transitions off. A crossfade borrows ~180 ms of
+material from the other side of the cut — that is what an NLE handle is. If a cut
+must be exact (a redaction, a state that must not be glimpsed), set
+`cutTransitionMs: 0`.
 
-The MCP tool surface should remain stable regardless of backend.
+## Cursor — automatic, not authored
 
-## Remotion responsibility
+The screencast does not draw the pointer, so DemoMotion composites a synthetic
+one. There is no cursor field and nothing to send. Know how it behaves:
 
-Remotion is the final compositor and source of truth for:
-- framing
-- zoom
-- pan
-- backgrounds
-- overlays
-- captions
-- title cards
-- transitions
-- sound design
-- voiceover
-- export
+- Its keyframes are your actions, so a click lands exactly on the control clicked.
+- It holds on the previous target and starts moving 500 ms before the next one.
+- **A click pulses; a fill does not.** If you want a beat of emphasis somewhere,
+  it has to be a real click.
+- It is drawn at constant pixel size outside the camera, so zoom never bloats it.
+- A click whose instant was cut is never sampled — no orphan pulse.
 
-Do not bake visual effects into the raw capture when they can remain editable in Remotion.
+## 6. `render_video`
 
-## Future high-level tool
+`{projectPath, outputPath?}` → H.264 MP4 (defaults to `final.mp4` beside the
+project). Re-render as many times as you like; the capture is untouched.
 
-The target interface is eventually:
+## 7. Validate before you hand it over
 
-`demo_create({ url, objective, duration, aspectRatio, brandPreset })`
+- The file exists and its duration matches the `editList` arithmetic.
+- No credential, token or real customer datum is on screen.
+- Every caption is fully readable at its length, and none is cut mid-sentence.
+- Zooms frame the target instead of clipping it.
+- No dead time survived.
 
-Internally, the agent still follows the workflow above so each phase remains observable and debuggable.
+If any of these fail, `project_update` and re-render. Do not re-record unless the
+capture itself is wrong.
+
+## Errors
+
+Every tool answers with a JSON body. A failure comes back as a normal result with
+`isError: true` and a text message — read it, do not just retry.
+
+- `Input validation error: …` — your arguments broke the tool's schema. The
+  message names the field and the bound (e.g. `zooms.0.scale: Too big: expected
+  number to be <=3`). Fix the argument; nothing was written.
+- `Unknown session: <id>` — the session was already stopped (`session_stop` and
+  `demo_finalize` both end it) or never existed.
+- `Cannot render: the project's edit list keeps no material` — your `editList`
+  cut everything.
+- `Host not allowed by DEMOMOTION_ALLOWED_HOSTS` — the operator restricted
+  navigation; ask, do not work around it.

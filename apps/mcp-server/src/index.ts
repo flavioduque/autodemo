@@ -72,7 +72,7 @@ function createServer() {
   const server = new McpServer({
     name: "demomotion",
     version: "0.2.0",
-    description: "Agent-first browser capture, automated timeline generation and Remotion rendering."
+    description: "Agent-first browser capture, automated timeline generation and HyperFrames rendering."
   });
 
   server.registerTool("session_start", {
@@ -193,7 +193,7 @@ function createServer() {
   });
 
   server.registerTool("render_video", {
-    description: "Render a DemoMotion project to MP4 using Remotion.",
+    description: "Render a DemoMotion project to MP4 using the HyperFrames compositor.",
     inputSchema: z.object({
       projectPath: z.string(),
       outputPath: z.string().optional()

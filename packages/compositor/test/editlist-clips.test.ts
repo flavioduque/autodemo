@@ -11,13 +11,18 @@ function mediaSpan(c: { mediaStart: number; duration: number; rate: number }) {
 test("each EditSegment becomes one clip carrying its media offset and its speed", () => {
   // Hand-computed: keep [0,2000) at 1x -> 2000 ms out; keep [5000,8000) at 2x ->
   // 3000/2 = 1500 ms out. Total 3500 ms. [2000,5000) and [8000,...) are cut.
+  //
+  // Transitions off on purpose: this test is about the EditList -> clip mapping
+  // alone. What a crossfade does to the same mapping (and the handle it has to
+  // borrow from the far side of the cut) is asserted in transitions.test.ts.
   const html = generateComposition(project({
     durationMs: 10000,
+    style: { cutTransitionMs: 0 },
     editList: [
       { sourceFromMs: 0, sourceToMs: 2000, speed: 1 },
       { sourceFromMs: 5000, sourceToMs: 8000, speed: 2 }
     ]
-  }));
+  } as never));
 
   assert.equal(Number(rootAttr(html, "data-duration")), 3.5);
 

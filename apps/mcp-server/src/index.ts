@@ -25,17 +25,47 @@ const editSegmentInput = z.object({
   speed: z.number().positive().default(1)
 }).refine((v) => v.sourceToMs > v.sourceFromMs, "sourceToMs must be greater than sourceFromMs");
 
+/** One word of narration, in the capture's time base. */
+const captionWordInput = z.object({
+  text: z.string().min(1),
+  fromMs: z.number().nonnegative(),
+  toMs: z.number().positive()
+}).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
+
+const captionInput = z.object({
+  fromMs: z.number().nonnegative(),
+  toMs: z.number().positive(),
+  text: z.string().min(1),
+  words: z.array(captionWordInput).default([])
+}).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
+
 /** Exported so the accepted surface can be exercised without booting a server. */
 export const projectUpdateInput = z.object({
   projectPath: z.string(),
   title: z.string().optional(),
   style: z.object({
     background: z.string().optional(), padding: z.number().min(0).max(300).optional(),
-    radius: z.number().min(0).max(100).optional(), shadow: z.boolean().optional()
+    radius: z.number().min(0).max(100).optional(), shadow: z.boolean().optional(),
+    // Caption look. Restrained by default; these are the knobs that dial it up.
+    captionColor: z.string().optional(), captionActiveColor: z.string().optional(),
+    captionAccent: z.string().optional(), captionEmphasis: z.number().min(0).max(0.4).optional(),
+    captionScale: z.number().min(0.5).max(2.5).optional(),
+    // Transitions. 0 turns each of them off.
+    cutTransitionMs: z.number().min(0).max(2000).optional(),
+    openingFadeMs: z.number().min(0).max(5000).optional(),
+    endingFadeMs: z.number().min(0).max(5000).optional()
   }).optional(),
   zooms: z.array(z.object({fromMs:z.number().nonnegative(),toMs:z.number().positive(),x:z.number().min(0).max(1),y:z.number().min(0).max(1),scale:z.number().min(1).max(3)})).optional(),
   editList: z.array(editSegmentInput).optional(),
-  callouts: z.array(z.object({fromMs:z.number().nonnegative(),toMs:z.number().positive(),text:z.string().min(1),x:z.number().min(0).max(1).default(.5),y:z.number().min(0).max(1).default(.85)})).optional()
+  callouts: z.array(z.object({fromMs:z.number().nonnegative(),toMs:z.number().positive(),text:z.string().min(1),x:z.number().min(0).max(1).default(.5),y:z.number().min(0).max(1).default(.85)})).optional(),
+  /**
+   * Narration, anchored in sourceMs. `words` carries per-word timestamps: today
+   * they come from the deterministic synthetic split `project_build` seeds, and
+   * when voiceover lands they will come from real audio alignment — the shape
+   * does not change. Sending a caption without `words` is legal; it just gets
+   * no word-by-word highlight.
+   */
+  captions: z.array(captionInput).optional()
 });
 
 function createServer() {
@@ -142,7 +172,7 @@ function createServer() {
 
 
   server.registerTool("project_update", {
-    description: "Update editable Remotion project styling, zooms, edit list (cuts and speed ramps), callouts, or title without modifying the raw recording.",
+    description: "Update editable project styling, zooms, edit list (cuts and speed ramps), callouts, captions (word-by-word narration) or title without modifying the raw recording.",
     inputSchema: projectUpdateInput
   }, async ({projectPath, ...patch}) => result(await updateProject(projectPath, patch)));
 

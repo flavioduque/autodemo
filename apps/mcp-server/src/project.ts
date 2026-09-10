@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DemoProjectSchema, type DemoProject } from "@demomotion/schema";
-import { buildAutoZooms } from "@demomotion/core";
+import { buildAutoZooms, buildCaptionSkeleton } from "@demomotion/core";
 
 export async function buildProject(captureManifestPath: string, title: string): Promise<{project: DemoProject; projectPath: string}> {
   const raw = JSON.parse(await fs.readFile(captureManifestPath, "utf8"));
@@ -25,7 +25,12 @@ export async function buildProject(captureManifestPath: string, title: string): 
     // Identity edit: one segment over the whole capture at normal speed. The
     // render is unchanged until someone actually edits the timeline.
     editList: [{ sourceFromMs: 0, sourceToMs: raw.durationMs, speed: 1 }],
-    callouts: []
+    callouts: [],
+    // A caption SKELETON, not finished narration: every labelled action becomes
+    // a line already timed and split per word, so the agent only has to rewrite
+    // the prose (project_update) instead of timing it. A capture with no labels
+    // produces no captions.
+    captions: buildCaptionSkeleton(raw.actions, raw.durationMs)
   });
 
   const projectPath = path.join(path.dirname(captureManifestPath), "project.json");
@@ -39,6 +44,7 @@ export type ProjectPatch = {
   zooms?: DemoProject["zooms"];
   editList?: DemoProject["editList"];
   callouts?: DemoProject["callouts"];
+  captions?: DemoProject["captions"];
 };
 
 export async function updateProject(projectPath: string, patch: ProjectPatch) {

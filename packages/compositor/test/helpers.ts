@@ -118,3 +118,51 @@ export function scaleOf(cam: any): number {
   if (!m) throw new Error(`no scale in transform: ${cam.style.transform}`);
   return Number(m[1]);
 }
+
+export type CaptionGroup = { id: string; start: number; duration: number; words: string[] };
+
+/** Every caption layer in the generated HTML, with its output timing and words. */
+export function captionGroups(html: string): CaptionGroup[] {
+  return [...html.matchAll(/<div id="(cap-\d+)" class="cap clip"[^>]*data-start="([^"]*)"[^>]*data-duration="([^"]*)"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g)]
+    .map((m) => ({
+      id: m[1],
+      start: Number(m[2]),
+      duration: Number(m[3]),
+      words: [...m[4].matchAll(/<span class="cap-w"[^>]*>([\s\S]*?)<\/span>/g)].map((w) => w[1])
+    }));
+}
+
+export type CaptionTrack = {
+  groups: Array<{ id: string; start: number; end: number; words: Array<{ id: string; start: number; end: number }> }>;
+  idle: string; active: string; accent: string; emphasis: number;
+};
+
+/** The caption data island the runtime reads, in OUTPUT seconds. */
+export function captionTrack(html: string): CaptionTrack {
+  const m = /<script type="application\/json" id="demomotion-captions">([\s\S]*?)<\/script>/.exec(html);
+  if (!m) throw new Error("no caption track in generated HTML");
+  return JSON.parse(m[1]);
+}
+
+/** The data-track-index of every clip, in document order. */
+export function clipTracks(html: string): number[] {
+  return [...html.matchAll(/<video\b[^>]*>/g)].map((m) => {
+    const t = /\bdata-track-index="([^"]*)"/.exec(m[0]);
+    if (!t) throw new Error(`clip without a track index: ${m[0]}`);
+    return Number(t[1]);
+  });
+}
+
+export type Transitions = {
+  crossfades: Array<{ id: string; start: number; duration: number }>;
+  opening: number;
+  ending: number;
+  total: number;
+};
+
+/** The transition data island the runtime reads, in OUTPUT seconds. */
+export function transitions(html: string): Transitions {
+  const m = /<script type="application\/json" id="demomotion-transitions">([\s\S]*?)<\/script>/.exec(html);
+  if (!m) throw new Error("no transition track in generated HTML");
+  return JSON.parse(m[1]);
+}

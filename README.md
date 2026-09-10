@@ -2,7 +2,7 @@
 
 **Agent-first product demo videos: operate → record → edit → render.**
 
-DemoMotion exposes a browser-recording and programmable-video pipeline through Model Context Protocol (MCP). An AI coding agent can inspect a web application, interact with it, capture the workflow, generate zoom regions from real UI coordinates, edit a structured project, and render the final MP4 with Remotion.
+DemoMotion exposes a browser-recording and programmable-video pipeline through Model Context Protocol (MCP). An AI coding agent can inspect a web application, interact with it, capture the workflow, generate zoom regions from real UI coordinates, edit a structured project, and render the final MP4 with HyperFrames.
 
 ## Why
 
@@ -12,13 +12,14 @@ Traditional workflow:
 
 DemoMotion workflow:
 
-`agent understands objective → agent operates product → capture → structured timeline → Remotion → final video`
+`agent understands objective → agent operates product → capture → structured timeline → HyperFrames → final video`
 
 ## Stack
 
 - MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.0.0)
 - Playwright 1.63.0
-- Remotion 4.0.521
+- HyperFrames 0.8.33 (compositor)
+- Remotion 4.0.521 (legacy composition, kept until the replacement is retired)
 - TypeScript
 - Zod 4
 - React 19
@@ -38,7 +39,7 @@ DemoMotion workflow:
 | `browser_screenshot` | Diagnostic UI checkpoint |
 | `session_status` | Current recording state |
 | `session_stop` | Persist raw video + capture manifest |
-| `project_build` | Compile capture into editable Remotion project |
+| `project_build` | Compile capture into an editable DemoMotion project |
 | `project_update` | Modify style, zooms, edit list (cuts and speed ramps) and callouts |
 | `render_video` | Render final H.264 MP4 |
 | `demo_finalize` | Stop + compile + render in one call |
@@ -47,10 +48,11 @@ DemoMotion workflow:
 
 ```text
 apps/
-  mcp-server/       MCP control plane + Playwright capture
-  studio/           Remotion composition/rendering
+  mcp-server/       MCP control plane + Playwright capture + render driver
+  studio/           legacy Remotion composition (superseded, not on the render path)
 packages/
-  core/             deterministic editing heuristics
+  compositor/       project.json -> HyperFrames HTML (pure, no I/O)
+  core/             deterministic editing heuristics + the sourceMs/outputMs bridge
   schema/           shared project/action schemas
 skills/
   demomotion/       agent workflow skill
@@ -140,6 +142,40 @@ The v0.2 capture adapter uses Playwright's deterministic video recording so the 
 
 Remotion Canvas Capture is the planned high-resolution web adapter. It can capture web content at higher-than-native resolution; its cursor metadata model also fits DemoMotion's separation between raw capture facts and creative rendering.
 
+## Rendering
+
+`render_video` generates the composition HTML from `project.json` at render time
+and hands it to the HyperFrames CLI. `project.json` stays the single source of
+truth: nothing travels as a CLI variable, so nested data such as the zoom track
+is never reduced to an unvalidated JSON string.
+
+Zooms and callouts are anchored in `sourceMs` — when they happened in the
+capture — and projected onto `outputMs` through the edit list. Cutting material
+repositions everything after it automatically, and anything whose source instant
+was cut simply does not appear.
+
+### Render-level tests
+
+Two checks render real video and take about a minute each, so they are opt-in:
+
+```bash
+DEMOMOTION_RENDER_TESTS=1 pnpm --filter @demomotion/mcp-server test
+```
+
+They assert the composition holds its final frame instead of going black, and
+that the fixture's corner markers come out square. Each one also renders the
+corresponding defective authoring and proves the check fires on it.
+
+### Telemetry
+
+HyperFrames sends anonymous render telemetry to HeyGen. DemoMotion renders on
+its users' behalf, so it does not phone home for them: the render child process
+is started with `HYPERFRAMES_NO_TELEMETRY=1`.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `HYPERFRAMES_NO_TELEMETRY` | set to `1` by DemoMotion | Opts the render out of HyperFrames telemetry. If you set this variable yourself — to any value, including `0` — DemoMotion keeps your choice and does not override it. |
+
 ## Security
 
 Use dedicated demo accounts and seeded demo data. Values sent through `browser_fill` are redacted from `capture.json`, but a target application may still visually display them in the video.
@@ -156,4 +192,9 @@ See `.env.example` for all supported variables.
 
 DemoMotion source code: MIT.
 
-Remotion is a dependency with its own licensing terms. Verify the Remotion license applicable to your organization and automated-rendering volume before commercial deployment.
+HyperFrames, the compositor on the render path, is Apache-2.0.
+
+Remotion is still a dependency of `apps/studio`, which is no longer on the render
+path but has not been removed yet. It carries its own licensing terms: verify the
+Remotion license applicable to your organization and automated-rendering volume
+before commercial deployment, or remove `apps/studio`.

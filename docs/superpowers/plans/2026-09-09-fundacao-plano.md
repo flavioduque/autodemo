@@ -36,19 +36,34 @@ operando um app real, servido localmente, nunca com `capture.json` escrito à m�
 
 **Objetivo:** saber o que funciona hoje, por execução, e ter um alvo de testes.
 
-- [ ] Registrar o resultado real de `pnpm install`, `typecheck`, `test`, `build`
-- [ ] Confirmar contra `node_modules` a API real de `@modelcontextprotocol/server@2.0.0`
+- [x] Registrar o resultado real de `pnpm install`, `typecheck`, `test`, `build`
+- [x] Confirmar contra `node_modules` a API real de `@modelcontextprotocol/server@2.0.0`
       (assinatura de `registerTool`, existência de `serveStdio`) e corrigir
       `apps/mcp-server/src/index.ts` se divergir
-- [ ] Remover `scripts-validate.mjs` (duplicata) e o caminho absoluto morto em
+- [x] Remover `scripts-validate.mjs` (duplicata) e o caminho absoluto morto em
       `scripts/offline-core-test.mjs`
 - [ ] Criar `fixtures/target-app/` — app local mínimo com carimbo de tempo visível,
       um formulário e uma lista, servido por um comando do repositório
-- [ ] Commitar `pnpm-lock.yaml`; CI passa a usar `--frozen-lockfile`
+- [x] Commitar `pnpm-lock.yaml`; CI passa a usar `--frozen-lockfile`
 
 **Verificação:** o servidor MCP sobe e responde a um `tools/list`; o fixture serve
 em `localhost`; um MP4 é produzido de ponta a ponta **ou** está documentado por
 execução exatamente onde e por que falha.
+
+### Fase 0 — o que já está fechado (verificado por execução, commit 05a0b52)
+
+- A camada MCP **não** precisava de reescrita: `registerTool` aceita `z.object(...)`
+  e essa é a forma preferida. O servidor sobe e responde `tools/list` com 15 tools.
+- `typecheck`, `test` e `build` passaram de vermelho a 0, com `--no-bail` para que
+  nenhum projeto abaixo do primeiro que falha seja mascarado.
+- `noEmitOnError` ligado: build que falha não emite mais `dist/`.
+- Captura destravada no macOS 13 via `DEMOMOTION_BROWSER_CHANNEL=chrome`.
+- Uma armadilha registrada: adicionar a extensão `.js` exigida pelo NodeNext deixava
+  o typecheck verde e **quebrava o bundler do Remotion**, que não aplica
+  `extensionAlias`. Corrigido em `apps/studio/remotion.config.ts`. É o caso exemplar
+  de por que a metade positiva do teste não é opcional.
+
+Restam da fase 0: o app-fixture e o primeiro MP4 real.
 
 ## Fase 1 — Camada de tempo (EditList)
 

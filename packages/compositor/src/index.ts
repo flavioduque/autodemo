@@ -1,5 +1,5 @@
 import type { DemoProject } from "@demomotion/schema";
-import { sourceToOutput, totalOutputMs, type EditList } from "@demomotion/core";
+import { sourceToOutput, totalOutputMs, cursorTrack, CURSOR_APPROACH_MS, CURSOR_PULSE_MS, type EditList } from "@demomotion/core";
 
 /** Seconds, trimmed to a stable decimal form. No locale, no rounding surprises. */
 function sec(ms: number): string {
@@ -94,6 +94,21 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
   const box = contentBox(project);
   const cameraJson = JSON.stringify(cameraTrack(project));
 
+  // The cursor is a SYNTHETIC layer: the deterministic screencast never draws the
+  // pointer, so we composite it. Like zooms and callouts it is anchored in
+  // sourceMs (its keyframes are action instants); the runtime projects OUTPUT time
+  // back to sourceMs through the EditList, so a click whose instant was cut is
+  // never sampled and its pulse never fires. The pointer is drawn at a constant
+  // pixel size OUTSIDE the #cam wrapper, so the camera zoom does not scale it. That
+  // it still lands on the clicked control under zoom is not luck: the auto-zoom is
+  // centred on the same (x,y), and a CSS scale leaves its transform-origin fixed.
+  const cursorJson = JSON.stringify({
+    track: cursorTrack(project.actions),
+    editList: project.editList,
+    approachMs: CURSOR_APPROACH_MS,
+    pulseMs: CURSOR_PULSE_MS
+  });
+
   // Callouts live in sourceMs too (spec section 3), so they travel through the
   // same projection: cut the material and the callout moves or disappears with it.
   const callouts = project.callouts.flatMap((callout, index) => {
@@ -149,6 +164,13 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
     font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
     font-size:${Math.max(22, Math.round(project.width * 0.018))}px;font-weight:650;line-height:1.2;
     box-shadow:0 16px 50px rgba(0,0,0,.32)}
+  /* Synthetic cursor. The SVG path tip is at its (0,0), so left/top is the tip.
+     Drawn at a constant pixel size and OUTSIDE #cam, so the camera never scales it. */
+  #cursor{position:absolute;left:0;top:0;width:28px;height:28px;opacity:0;pointer-events:none;
+    overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));will-change:left,top,opacity;z-index:2}
+  #cursor-ring{position:absolute;left:0;top:0;width:46px;height:46px;margin:-23px 0 0 -23px;
+    border-radius:50%;border:3px solid rgba(56,189,248,.95);opacity:0;pointer-events:none;
+    transform:scale(.3);will-change:transform,opacity;z-index:2}
 </style>
 </head>
 <body>
@@ -157,9 +179,12 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
       <div id="cam" style="${camStyle}">
       ${videos}
       </div>
+      <div id="cursor-ring"></div>
+      <svg id="cursor" width="28" height="28" viewBox="0 0 16 20" aria-hidden="true"><path d="M0 0 L0 15 L4.2 11.3 L6.9 17.8 L9.3 16.8 L6.6 10.4 L12 10.4 Z" fill="#fff" stroke="#12151c" stroke-width="1.1" stroke-linejoin="round"/></svg>
     </div>
     ${callouts}
   </div>
+  <script type="application/json" id="demomotion-cursor">${cursorJson}</script>
   <script type="application/json" id="demomotion-camera">${cameraJson}</script>
   <script src="${escapeHtml(gsapSrc)}"></script>
   <script>
@@ -196,6 +221,68 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
         cam.style.transform = "scale(" + c.scale + ")";
       }
 
+      // --- Synthetic cursor layer. Anchored in sourceMs; projected to output
+      // through the EditList, so a click whose instant was cut is never sampled
+      // and its pulse never fires. outputToSource and cursorAt mirror the pure
+      // @demomotion/core functions exactly (same windows, same easing). ---
+      var cursorData = JSON.parse(document.getElementById("demomotion-cursor").textContent);
+      var cursorKf = cursorData.track;
+      var cursorEdit = cursorData.editList;
+      var APPROACH = cursorData.approachMs;
+      var PULSE = cursorData.pulseMs;
+      var cursorEl = document.getElementById("cursor");
+      var ringEl = document.getElementById("cursor-ring");
+
+      function outputToSource(ms) {
+        var from = 0;
+        for (var i = 0; i < cursorEdit.length; i++) {
+          var s = cursorEdit[i];
+          var to = from + (s.sourceToMs - s.sourceFromMs) / s.speed;
+          if (ms >= from && ms < to) return s.sourceFromMs + (ms - from) * s.speed;
+          from = to;
+        }
+        return null;
+      }
+
+      function cursorEaseOut(p) { return 1 - Math.pow(1 - p, 3); }
+
+      function cursorAt(sourceMs) {
+        if (cursorKf.length === 0 || sourceMs < cursorKf[0].sourceMs) return null;
+        var pi = 0;
+        for (var i = 0; i < cursorKf.length; i++) { if (cursorKf[i].sourceMs <= sourceMs) pi = i; else break; }
+        var prev = cursorKf[pi], next = cursorKf[pi + 1];
+        var x = prev.x, y = prev.y;
+        if (next) {
+          var aStart = Math.max(prev.sourceMs, next.sourceMs - APPROACH);
+          if (sourceMs > aStart) {
+            var p = cursorEaseOut((sourceMs - aStart) / (next.sourceMs - aStart));
+            x = prev.x + (next.x - prev.x) * p;
+            y = prev.y + (next.y - prev.y) * p;
+          }
+        }
+        var phase = null;
+        for (var j = 0; j < cursorKf.length; j++) {
+          var k = cursorKf[j];
+          if (k.click && sourceMs >= k.sourceMs && sourceMs < k.sourceMs + PULSE) { phase = (sourceMs - k.sourceMs) / PULSE; break; }
+        }
+        return { x: x, y: y, clickPhase: phase };
+      }
+
+      function applyCursor(t) {
+        var sourceMs = outputToSource(t * 1000);
+        var s = sourceMs === null ? null : cursorAt(sourceMs);
+        if (!s) { cursorEl.style.opacity = "0"; ringEl.style.opacity = "0"; return; }
+        cursorEl.style.left = s.x * 100 + "%";
+        cursorEl.style.top = s.y * 100 + "%";
+        cursorEl.style.opacity = "1";
+        if (s.clickPhase === null) { ringEl.style.opacity = "0"; return; }
+        // The ring expands and fades on the click: a beat a raw recording lacks.
+        ringEl.style.left = s.x * 100 + "%";
+        ringEl.style.top = s.y * 100 + "%";
+        ringEl.style.transform = "scale(" + (0.35 + s.clickPhase * 1.05) + ")";
+        ringEl.style.opacity = "" + (0.6 * (1 - s.clickPhase));
+      }
+
       // The camera is driven by a property SETTER, not by an onUpdate callback:
       // GSAP's seek() suppresses callbacks by default, but it always writes the
       // tweened property. So the frame is correct whichever seek API drives it.
@@ -203,13 +290,14 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
       Object.defineProperty(driver, "t", {
         configurable: true,
         get: function () { return this._t; },
-        set: function (value) { this._t = value; apply(value); }
+        set: function (value) { this._t = value; apply(value); applyCursor(value); }
       });
 
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
       tl.to(driver, { t: TOTAL, duration: TOTAL, ease: "none" }, 0);
       apply(0);
+      applyCursor(0);
       window.__timelines["root"] = tl;
     })();
   </script>

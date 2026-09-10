@@ -99,13 +99,18 @@ export async function runtime(html: string) {
   const elements: Record<string, any> = {
     cam: { style: {} as Record<string, string> },
     stage: { style: {} as Record<string, string> },
-    "demomotion-camera": { textContent: cameraJson[1] }
+    cursor: { style: {} as Record<string, string> },
+    "cursor-ring": { style: {} as Record<string, string> }
   };
+  // Register every JSON data island by id, so the runtime can read any of them.
+  for (const m of html.matchAll(/<script type="application\/json" id="([^"]+)">([\s\S]*?)<\/script>/g)) {
+    elements[m[1]] = { textContent: m[2] };
+  }
   const win: any = {};
   const context = vm.createContext({ window: win, document: { getElementById: (id: string) => elements[id] ?? null }, gsap, Math, JSON, console });
   vm.runInContext(scripts[0], context);
 
-  return { script: scripts[0], timelines: win.__timelines as Record<string, any>, cam: elements.cam };
+  return { script: scripts[0], timelines: win.__timelines as Record<string, any>, cam: elements.cam, cursor: elements.cursor, ring: elements["cursor-ring"] };
 }
 
 export function scaleOf(cam: any): number {

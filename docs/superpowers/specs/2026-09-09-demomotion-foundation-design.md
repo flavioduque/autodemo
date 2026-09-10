@@ -4,6 +4,32 @@ Data: 2026-09-09
 Status: proposto, aguardando revisão
 Escopo: sub-projetos 0 e 1 (fundação verificada + qualidade cinematográfica)
 
+## 0. O que este documento é — e o que o projeto não tem
+
+Este é um documento de **arquitetura de software**: quais módulos existem, quem
+fala com quem, em que formato os dados trafegam. "Design" aqui tem o mesmo sentido
+que em "design de API". Não há nesta spec nenhuma decisão visual, e o projeto não
+tem frontend.
+
+**DemoMotion é 100% MCP.** A única interface é a superfície de ferramentas que o
+agente chama. Nenhum passo do fluxo depende de humano clicando. O navegador pode
+ser exibido (`headless: false`) para que se acompanhe a execução, mas quem opera o
+produto é o Playwright dirigido pelo agente — a janela é observação, nunca entrada.
+
+O objetivo é entregar um vídeo comparável ao que um humano produziria numa
+ferramenta como o Recordly, gerado inteiramente de forma agêntica. Não é reimplementar
+o produto Recordly, e nenhuma linha dele é usada.
+
+Onde vive a parte visual: no compositor Remotion, que recebe `project.json` como
+props e resolve, frame a frame, posição de câmera e sobreposições. Escrever isso é
+escrever matemática de tempo e de recorte, não interface.
+
+**Uma ressalva sobre `apps/studio`.** O script `remotion studio` abre o Remotion
+Studio, que *é* uma UI para humano. Ela não pertence ao caminho agêntico: serve
+apenas para depurar a composição durante o desenvolvimento e inspecionar um frame
+de perto. Nenhuma ferramenta MCP depende dela, e o render em produção roda por CLI,
+sem interface. Quem chegar ao repositório não deve confundi-la com um editor.
+
 ## 1. Ponto de partida
 
 O repositório é um esqueleto de ~776 linhas que **nunca foi executado**. Isso está

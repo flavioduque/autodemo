@@ -1,25 +1,20 @@
 {
-  "name": "@demomotion/mcp-server",
+  "name": "@demomotion/compositor",
   "version": "0.2.0",
   "type": "module",
+  "exports": "./src/index.ts",
   "scripts": {
-    "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@demomotion/compositor": "workspace:*",
     "@demomotion/core": "workspace:*",
-    "@demomotion/schema": "workspace:*",
-    "@modelcontextprotocol/server": "2.0.0",
-    "gsap": "^3.15.0",
-    "hyperframes": "^0.8.33",
-    "playwright": "1.63.0",
-    "zod": "^4.1.11"
+    "@demomotion/schema": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",
+    "gsap": "^3.15.0",
     "tsx": "^4.20.5",
     "typescript": "^6.0.0"
   }

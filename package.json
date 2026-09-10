@@ -8,7 +8,8 @@
     "dev:mcp": "pnpm --filter @demomotion/mcp-server dev",
     "studio": "pnpm --filter @demomotion/studio studio",
     "typecheck": "pnpm -r --no-bail typecheck",
-    "test": "pnpm -r --no-bail --if-present test"
+    "test": "pnpm -r --no-bail --if-present test",
+    "fixture": "node fixtures/target-app/server.mjs"
   },
   "devDependencies": {
     "typescript": "^6.0.0"

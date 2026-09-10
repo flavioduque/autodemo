@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Acme CRM — Demo Fixture</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- Corner markers: flush to every viewport edge. A render that crops loses one or more. -->
+  <div class="corner corner--tl" data-testid="corner-tl">TL</div>
+  <div class="corner corner--tr" data-testid="corner-tr">TR</div>
+  <div class="corner corner--bl" data-testid="corner-bl">BL</div>
+  <div class="corner corner--br" data-testid="corner-br">BR</div>
+
+  <!-- Elapsed-time stamp: driven by the page's own performance.now(), updated every animation frame. -->
+  <div class="clock" id="clock" data-testid="elapsed-clock">T+00000 ms</div>
+
+  <main class="app">
+    <header class="app__header">
+      <div class="brand" data-testid="brand">ACME CRM</div>
+      <button class="btn btn--primary" id="new-client" data-testid="new-client-button">New client</button>
+    </header>
+
+    <section class="panel" id="form-panel" data-testid="client-form" hidden>
+      <h2 class="panel__title">New client</h2>
+      <form id="client-form" autocomplete="off">
+        <label class="field">
+          <span class="field__label">Name</span>
+          <input class="field__input" type="text" id="name" name="name" data-testid="client-name-input" placeholder="Ada Lovelace" />
+        </label>
+        <label class="field">
+          <span class="field__label">Email</span>
+          <input class="field__input" type="email" id="email" name="email" data-testid="client-email-input" placeholder="ada@example.com" />
+        </label>
+        <label class="field">
+          <span class="field__label">Phone</span>
+          <input class="field__input" type="tel" id="phone" name="phone" data-testid="client-phone-input" placeholder="+55 11 90000-0000" />
+        </label>
+        <div class="actions">
+          <button class="btn btn--ghost" type="button" id="cancel" data-testid="cancel-button">Cancel</button>
+          <button class="btn btn--primary" type="submit" id="save" data-testid="save-button">Save client</button>
+        </div>
+      </form>
+    </section>
+
+    <div class="toast" id="toast" data-testid="success-message" hidden>Client saved successfully.</div>
+
+    <section class="panel">
+      <h2 class="panel__title">Clients <span class="count" id="count" data-testid="client-count">2</span></h2>
+      <ul class="list" id="client-list" data-testid="client-list">
+        <li class="row" data-testid="client-row">
+          <span class="row__name">Grace Hopper</span>
+          <span class="row__email">grace@navy.mil</span>
+          <span class="row__phone">+1 202 555 0141</span>
+        </li>
+        <li class="row" data-testid="client-row">
+          <span class="row__name">Alan Turing</span>
+          <span class="row__email">alan@bletchley.uk</span>
+          <span class="row__phone">+44 20 7946 0123</span>
+        </li>
+      </ul>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

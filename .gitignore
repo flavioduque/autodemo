@@ -9,3 +9,6 @@ dist
 .DS_Store
 data/sessions/*
 !data/sessions/.gitkeep
+
+# artefatos temporários do render (renderVideo copia o vídeo-fonte para cá)
+apps/studio/public/__demomotion/

@@ -1,0 +1,160 @@
+/* Fixture target app — deliberately high contrast so captured frames are easy to read. */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #ffffff;
+  color: #101828;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* ---------- Corner markers ---------- */
+/* Flush to the viewport edges. Any crop in the render pipeline removes at least one. */
+.corner {
+  position: fixed;
+  width: 128px;
+  height: 128px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #ffffff;
+  z-index: 50;
+  border: 6px solid #000000;
+}
+.corner--tl { top: 0;    left: 0;  background: #e11d48; } /* red    */
+.corner--tr { top: 0;    right: 0; background: #16a34a; } /* green  */
+.corner--bl { bottom: 0; left: 0;  background: #2563eb; } /* blue   */
+.corner--br { bottom: 0; right: 0; background: #f59e0b; } /* amber  */
+
+/* ---------- Elapsed-time stamp ---------- */
+.clock {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  background: #000000;
+  color: #00ff66;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 84px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 4px;
+  padding: 18px 36px;
+  border: 6px solid #00ff66;
+  border-top: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---------- App ---------- */
+.app {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 190px 24px 170px;
+}
+
+.app__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.brand {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 3px;
+}
+
+.btn {
+  font-size: 20px;
+  font-weight: 700;
+  padding: 14px 26px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.btn--primary { background: #4338ca; color: #fff; }
+.btn--primary:hover { background: #372fb0; }
+.btn--ghost { background: #fff; color: #344054; border-color: #d0d5dd; }
+
+.panel {
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 26px 30px;
+  margin-bottom: 22px;
+}
+.panel__title {
+  margin: 0 0 18px;
+  font-size: 26px;
+  font-weight: 750;
+}
+.count {
+  display: inline-block;
+  min-width: 42px;
+  text-align: center;
+  background: #4338ca;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 20px;
+  padding: 2px 12px;
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.field { display: block; margin-bottom: 18px; }
+.field__label {
+  display: block;
+  font-size: 18px;
+  font-weight: 650;
+  margin-bottom: 8px;
+  color: #344054;
+}
+.field__input {
+  width: 100%;
+  font-size: 22px;
+  padding: 14px 16px;
+  border: 2px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #101828;
+}
+.field__input:focus { outline: none; border-color: #4338ca; }
+
+.actions { display: flex; gap: 14px; justify-content: flex-end; }
+
+.toast {
+  background: #dcfce7;
+  border: 3px solid #16a34a;
+  color: #14532d;
+  font-size: 26px;
+  font-weight: 750;
+  padding: 18px 24px;
+  border-radius: 12px;
+  margin-bottom: 22px;
+}
+
+.list { list-style: none; margin: 0; padding: 0; }
+.row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 1fr;
+  gap: 12px;
+  align-items: center;
+  background: #fff;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
+  font-size: 21px;
+}
+.row--new { border-color: #16a34a; background: #f0fdf4; }
+.row__name { font-weight: 750; }
+.row__email, .row__phone { color: #475467; font-variant-numeric: tabular-nums; }

@@ -286,3 +286,71 @@ documento original. O CDP screencast do §4 funciona igual nos dois.
 - **Paridade com a CI.** A CI fixa Node 22 em `ubuntu-latest`; tudo acima foi
   observado em Node 26 / macOS 13. Os erros de typecheck são independentes de
   plataforma e falhariam na CI também; o de Playwright é específico do macOS 13.
+
+## 9. Compositor: HyperFrames substitui o Remotion (decidido em 2026-09-10)
+
+### Por que
+
+O Remotion **não inicia** nesta máquina: seus binários de compositor são
+compilados para macOS 15 e o host é 13.7.8. O pin mais recente que roda aqui é
+4.0.437, ~86 versões atrás.
+
+O HyperFrames (`hyperframes`, Apache-2.0) não tem binário nativo próprio — dirige
+um Chrome x86_64 via puppeteer. Renderiza 9s de 1080p30 em 24 segundos nesta
+mesma máquina.
+
+Medido por execução, em dois spikes:
+
+| Propriedade | Resultado |
+|---|---|
+| Seek frame-exato | 1:1 com a fonte em 8 timestamps, lidos no relógio do fixture |
+| Determinismo | dois renders, SHA-256 idêntico |
+| Composição > vídeo | segura o último frame |
+| Corte | pulo no frame exato; faixa excluída presente no controle, ausente no corte |
+| Rampa de velocidade | frame *n* = frame *2n* do controle, 5/5 |
+| Callout posicionado | dentro de meio pixel do alvo |
+| Razão de aspecto | marcadores 108×108 quadrados, contra 108×90 do Remotion |
+
+### A licença, e por que ela pesa num OSS
+
+O Remotion exige licença comercial paga acima de 3 pessoas na empresa. Num projeto
+open-source isso não custa ao autor — **custa a quem adota**. Um time de produto
+que queira usar o DemoMotion precisaria comprar licença de terceiro para rodar uma
+ferramenta gratuita. Apache-2.0 elimina o pedágio.
+
+(Este projeto **não** é um SaaS, apesar das seções 48 e 49 do documento de visão
+original. O argumento de licença vale pela adoção, não por receita.)
+
+### A armadilha que precisa virar asserção
+
+Um clipe de vídeo cujo `data-duration` seja igual à duração da **mídia**, dentro de
+uma composição mais longa, faz a cauda ir a **preto silenciosamente** — sem erro,
+sem aviso, render sai 0. Medido: `blackdetect` acusou `black_duration:1.1`.
+
+Regra: o `data-duration` do clipe é a duração da **composição**, não da mídia.
+Com isso o engine trava no último frame decodificável e segura.
+
+Isso vira teste com as duas metades: provar que o autoramento errado **aciona** o
+`blackdetect`, e que o nosso não. Sem a metade positiva, a asserção é vazia.
+
+### Encaixe com a EditList
+
+`data-playback-rate` aceita velocidade **constante** por clipe. A `EditList` do §3 é
+exatamente um `speed` constante por segmento. Rampas aceleradas não são suportadas
+pelo engine — e a spec nunca as pediu.
+
+### Telemetria
+
+O `hyperframes` envia telemetria anônima de render para a HeyGen. O DemoMotion
+define `HYPERFRAMES_NO_TELEMETRY` por padrão no processo de render: uma ferramenta
+open-source não telefona para casa em nome de quem a instalou. Overridável por
+quem quiser contribuir com dados, e documentado no README.
+
+### O que ainda não foi provado
+
+- Zoom combinado com corte (foram provados separadamente, nunca juntos)
+- Áudio sob rampa de velocidade
+- fps diferente de 30; composições aninhadas
+- Determinismo entre máquinas diferentes
+
+O Remotion permanece no repositório até o substituto cobrir tudo que ele cobria.

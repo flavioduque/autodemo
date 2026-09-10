@@ -1,200 +1,174 @@
-# DemoMotion MCP
+<div align="center">
 
-**Agent-first product demo videos: operate → record → edit → render.**
+# DemoMotion
 
-DemoMotion exposes a browser-recording and programmable-video pipeline through Model Context Protocol (MCP). An AI coding agent can inspect a web application, interact with it, capture the workflow, generate zoom regions from real UI coordinates, edit a structured project, and render the final MP4 with HyperFrames.
+### The AI agent makes the demo video. All of it.
 
-## Why
+**One prompt in. A finished `.mp4` out. No human in the edit.**
 
-Traditional workflow:
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](./LICENSE)
+[![Model Context Protocol](https://img.shields.io/badge/MCP-server-6366f1.svg)](https://modelcontextprotocol.io)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](https://www.typescriptlang.org/)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-f59e0b.svg)](./CONTRIBUTING.md)
 
-`human records → human edits → export`
+</div>
 
-DemoMotion workflow:
+---
 
-`agent understands objective → agent operates product → capture → structured timeline → HyperFrames → final video`
+DemoMotion is a **Model Context Protocol (MCP) server** that turns an AI agent into a motion designer. The agent drives your web app, records the session as a frame-indexed timeline, decides where to zoom, cuts the dead time, and renders a polished product-demo video — programmatically. There is no timeline to drag and no human in the edit.
 
-## Stack
+It exists to collapse this:
 
-- MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.0.0)
-- Playwright 1.63.0
-- HyperFrames 0.8.33 (compositor)
-- Remotion 4.0.521 (legacy composition, kept until the replacement is retired)
-- TypeScript
-- Zod 4
-- React 19
-
-## MCP tools
-
-| Tool | Purpose |
-|---|---|
-| `session_start` | Start recorded Chromium session |
-| `browser_inspect` | Return compact interactive-element inventory |
-| `browser_goto` | Navigate |
-| `browser_click` | Click and record normalized target coordinates |
-| `browser_fill` | Fill fields while redacting values from metadata |
-| `browser_scroll` | Scroll and log timeline event |
-| `browser_keypress` | Keyboard interaction |
-| `browser_wait` | Intentional pacing/UI wait |
-| `browser_screenshot` | Diagnostic UI checkpoint |
-| `session_status` | Current recording state |
-| `session_stop` | Persist raw video + capture manifest |
-| `project_build` | Compile capture into an editable DemoMotion project |
-| `project_update` | Modify style, zooms, edit list (cuts and speed ramps) and callouts |
-| `render_video` | Render final H.264 MP4 |
-| `demo_finalize` | Stop + compile + render in one call |
-
-## Repository layout
-
-```text
-apps/
-  mcp-server/       MCP control plane + Playwright capture + render driver
-  studio/           legacy Remotion composition (superseded, not on the render path)
-packages/
-  compositor/       project.json -> HyperFrames HTML (pure, no I/O)
-  core/             deterministic editing heuristics + the sourceMs/outputMs bridge
-  schema/           shared project/action schemas
-skills/
-  demomotion/       agent workflow skill
-scripts/            publication helper
-docs/               architecture
+```
+brief → human records → human edits in a video editor → export
 ```
 
-## Install
+into this:
 
-Requires Node.js 22+ and pnpm 10.
+```
+"Show how to add a client in my SaaS in 30 seconds."
+        ↓  (one MCP call)
+   product-demo.mp4
+```
+
+## Why this is not just another screen recorder
+
+Loom, Screen Studio and Recordly are built for a **human** to record and edit. DemoMotion is built for an **agent** to operate the product and author the edit as data. The difference is who is driving — and that everything the agent decides is structured, inspectable, and reproducible.
+
+The core principle: **capture what happened once; decide how it should look later.** The raw recording and the interaction events are the source of truth. Every creative choice — zoom, framing, cuts, speed, callouts — lives in a `project.json` the agent edits and re-renders, never baked into the pixels.
+
+|                       | Loom · Screen Studio · Recordly | **DemoMotion**                     |
+| --------------------- | ------------------------------- | ---------------------------------- |
+| Who operates the app  | a human                         | **the AI agent**                   |
+| Who makes the edit    | a human, in a UI                | **the agent, as `project.json`**   |
+| Zoom / framing        | manual or heuristic on record   | **from real UI coordinates, editable after the fact** |
+| Reproducible          | no                              | **yes — same input, same video**   |
+| Interface             | a desktop app                   | **an MCP tool surface**            |
+| License               | proprietary                     | **MIT**                            |
+
+## How it works
+
+```
+ prompt
+   │
+   ▼
+ AI agent ──(MCP tools)──► DemoMotion server
+                               │
+        ┌──────────────────────┼───────────────────────┐
+        ▼                      ▼                        ▼
+  deterministic          structured event         project compiler
+  screen capture   ───►  timeline (sourceMs)  ───► project.json (editable)
+  (CDP screencast,                                      │
+   constant fps)                                        ▼
+                                                 HyperFrames compositor
+                                                  (camera · cuts · overlays)
+                                                        │
+                                                        ▼
+                                                   final .mp4
+```
+
+Two design decisions do the heavy lifting:
+
+- **The capture timeline is exact by construction.** Frames are laid on a constant-fps grid from CDP screencast timestamps, so `frame i ⇔ sourceMs = i / fps × 1000`. Events and frames share one clock — no guessing where a click landed by analysing the video afterward.
+- **One time model for every edit.** Cuts and speed ramps collapse into a single `EditList` of `{sourceFromMs, sourceToMs, speed}` segments. Zooms and callouts are anchored to *when they happened*, then projected onto output time — so cutting a boring stretch repositions everything after it automatically.
+
+## Quick start
+
+Requires **Node.js 22+** and **pnpm 10**.
 
 ```bash
 pnpm install
 pnpm --filter @demomotion/mcp-server exec playwright install chromium
-pnpm typecheck
-pnpm test
-pnpm build
+pnpm typecheck && pnpm test && pnpm build
 ```
 
-The Playwright install command must be scoped with `--filter`. Playwright is a
-dependency of `apps/mcp-server`, not of the workspace root, so a bare
-`pnpm exec playwright ...` at the root can silently fall through to an unrelated
-Playwright found on `PATH` and provision the wrong browser cache.
+> The Playwright install **must** be scoped with `--filter`. Playwright is a dependency of `apps/mcp-server`, not the workspace root; a bare `pnpm exec playwright ...` can fall through to an unrelated Playwright on `PATH` and provision the wrong browser cache.
 
-If Playwright has no bundled Chromium build for your platform (for example
-macOS 13, where Playwright 1.63.0 requires a Chromium revision with no macOS 13
-binary), use a locally installed browser instead:
-
-```bash
-DEMOMOTION_BROWSER_CHANNEL=chrome pnpm dev:mcp
-```
-
-See [Browser selection](#browser-selection).
-
-## Run
-
-For interactive development:
-
-```bash
-pnpm dev:mcp
-```
-
-MCP clients must not use `pnpm dev:mcp`: pnpm prints its script banner on
-**stdout**, and an MCP stdio transport requires stdout to carry JSON-RPC frames
-only. Point the client at the `tsx` entry directly.
-
-Example MCP client entry:
+Point your MCP client at the `tsx` entry directly (not `pnpm dev:mcp` — pnpm prints a banner on stdout, and an MCP stdio transport needs stdout to carry JSON-RPC only):
 
 ```json
 {
   "mcpServers": {
     "demomotion": {
-      "command": "/absolute/path/demomotion-mcp/apps/mcp-server/node_modules/.bin/tsx",
-      "args": ["/absolute/path/demomotion-mcp/apps/mcp-server/src/index.ts"],
-      "cwd": "/absolute/path/demomotion-mcp",
-      "env": {
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
-      }
+      "command": "/abs/path/demomotion-mcp/apps/mcp-server/node_modules/.bin/tsx",
+      "args": ["/abs/path/demomotion-mcp/apps/mcp-server/src/index.ts"],
+      "cwd": "/abs/path/demomotion-mcp",
+      "env": { "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1" }
     }
   }
 }
 ```
 
-`cwd` must be the repository root: recording sessions are written to
-`data/sessions/` relative to the working directory.
-
-## Browser selection
-
-| Variable | Default | Effect |
-|---|---|---|
-| `DEMOMOTION_BROWSER_CHANNEL` | unset | Unset: use Playwright's bundled Chromium (deterministic, used in CI). Set to a Playwright channel such as `chrome` or `msedge`: drive that locally installed browser instead. |
+On a host where Playwright has no bundled Chromium build (e.g. macOS 13), drive a locally installed browser instead — no downgrade, no download:
 
 ```bash
 DEMOMOTION_BROWSER_CHANNEL=chrome pnpm dev:mcp
 ```
 
-Use this when the bundled Chromium cannot be provisioned on the host. If a
-launch fails without the variable set, the error explains this option.
+## The MCP tool surface
 
-## Agent skill
+The agent sees granular, auditable tools — not a black box — so any run can be debugged, retried or partially re-rendered.
 
-Use `skills/demomotion/SKILL.md`. The skill specifies the complete workflow: objective analysis, scene planning, product interaction, capture, project compilation, creative editing, rendering and validation.
+| Tool | Purpose |
+|---|---|
+| `session_start` | Start a deterministic recording session |
+| `browser_goto` / `browser_click` / `browser_fill` | Operate the product; clicks record normalized target coordinates, fills are redacted from metadata |
+| `browser_scroll` / `browser_keypress` / `browser_wait` | Scroll, keyboard, intentional pacing |
+| `browser_inspect` | Compact inventory of interactive elements with stable selectors |
+| `browser_screenshot` / `session_status` | Diagnostic checkpoints |
+| `session_stop` | Persist the recording + capture manifest (constant fps) |
+| `project_build` | Compile a capture into an editable project + auto-zoom regions |
+| `project_update` | Edit style, zooms, the edit list (cuts + speed ramps) and callouts — no re-recording |
+| `render_video` | Render the final H.264 MP4 |
+| `demo_finalize` | Stop → compile → render in one call |
 
-## Capture strategy
+An agent skill in [`skills/demomotion/SKILL.md`](./skills/demomotion/SKILL.md) tells the model *how* to use them: objective analysis, scene planning, capture, editing heuristics, render, validation.
 
-The v0.2 capture adapter uses Playwright's deterministic video recording so the complete control loop works without requiring a browser extension.
+## What works today, and what's next
 
-Remotion Canvas Capture is the planned high-resolution web adapter. It can capture web content at higher-than-native resolution; its cursor metadata model also fits DemoMotion's separation between raw capture facts and creative rendering.
+DemoMotion is early and honest about it. Everything below the line is proven by execution in the test suite; everything in **Roadmap** is not built yet.
 
-## Rendering
+**Working and tested**
+- Deterministic CDP screencast capture on a constant-fps grid (frame↔time exact by construction)
+- Structured event timeline with normalized interaction coordinates
+- `EditList`: cuts and constant-speed ramps in one model
+- Camera / zoom with real easing, correct aspect ratio (no silent crop), held final frame
+- Timed callouts anchored in source time
+- Real H.264 MP4 render via the [HyperFrames](https://github.com/heygen-com/hyperframes) compositor
+- Render telemetry **off by default** (see below)
 
-`render_video` generates the composition HTML from `project.json` at render time
-and hands it to the HyperFrames CLI. `project.json` stays the single source of
-truth: nothing travels as a CLI variable, so nested data such as the zoom track
-is never reduced to an unvalidated JSON string.
+**Roadmap**
+- Synthetic cursor layer (smoothing, click pulse) decoupled from the recording
+- Script-first captions and optional voiceover (TTS)
+- Automatic scene detection and pacing
+- VLM-based visual validation of the rendered output
+- Native desktop capture behind the same tool surface
 
-Zooms and callouts are anchored in `sourceMs` — when they happened in the
-capture — and projected onto `outputMs` through the edit list. Cutting material
-repositions everything after it automatically, and anything whose source instant
-was cut simply does not appear.
+## Determinism, security & telemetry
 
-### Render-level tests
+- **Reproducible renders.** The same `project.json` produces a byte-identical MP4. `project.json` is the single source of truth — nothing travels as an unvalidated CLI variable.
+- **Host allowlist.** Set `DEMOMOTION_ALLOWED_HOSTS` to restrict navigation. Only `http`/`https` are accepted.
+- **Redaction.** Values sent through `browser_fill` are stripped from `capture.json`. (A target app may still *display* them on screen — use seeded demo data and dedicated accounts.)
+- **No phoning home.** HyperFrames sends anonymous render telemetry to its vendor. Because DemoMotion renders on its users' behalf, it sets `HYPERFRAMES_NO_TELEMETRY=1` in the render process by default. Set the variable yourself (to any value) and DemoMotion keeps your choice.
 
-Two checks render real video and take about a minute each, so they are opt-in:
+See [`.env.example`](./.env.example) for every supported variable, and [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full design.
 
-```bash
-DEMOMOTION_RENDER_TESTS=1 pnpm --filter @demomotion/mcp-server test
+## Repository layout
+
+```text
+apps/mcp-server/     MCP control plane + deterministic capture + render driver
+packages/compositor/ project.json → HyperFrames HTML (pure, no I/O)
+packages/core/       editing heuristics + the sourceMs ⇄ outputMs bridge (EditList)
+packages/schema/     shared project/action schemas (Zod)
+skills/demomotion/   the agent workflow skill
 ```
 
-They assert the composition holds its final frame instead of going black, and
-that the fixture's corner markers come out square. Each one also renders the
-corresponding defective authoring and proves the check fires on it.
+## Contributing
 
-### Telemetry
-
-HyperFrames sends anonymous render telemetry to HeyGen. DemoMotion renders on
-its users' behalf, so it does not phone home for them: the render child process
-is started with `HYPERFRAMES_NO_TELEMETRY=1`.
-
-| Variable | Default | Effect |
-|---|---|---|
-| `HYPERFRAMES_NO_TELEMETRY` | set to `1` by DemoMotion | Opts the render out of HyperFrames telemetry. If you set this variable yourself — to any value, including `0` — DemoMotion keeps your choice and does not override it. |
-
-## Security
-
-Use dedicated demo accounts and seeded demo data. Values sent through `browser_fill` are redacted from `capture.json`, but a target application may still visually display them in the video.
-
-Optional host restriction:
-
-```bash
-DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 pnpm dev:mcp
-```
-
-See `.env.example` for all supported variables.
+Issues and PRs are welcome. The test discipline is strict on purpose: every behaviour is proven by a test that was seen to fail first, and both halves of a guarantee are asserted (the abuse is rejected **and** the legitimate case still passes). See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## License
 
-DemoMotion source code: MIT.
+DemoMotion source: **MIT**. The HyperFrames compositor on the render path is Apache-2.0. Both are permissive — DemoMotion adds no per-seat cost for the teams that adopt it.
 
-HyperFrames, the compositor on the render path, is Apache-2.0.
-
-Remotion is still a dependency of `apps/studio`, which is no longer on the render
-path but has not been removed yet. It carries its own licensing terms: verify the
-Remotion license applicable to your organization and automated-rendering volume
-before commercial deployment, or remove `apps/studio`.
+> `apps/studio` still contains the superseded Remotion composition (no longer on the render path). Remotion carries its own commercial licensing terms; it will be removed, and until then you can delete `apps/studio` if you prefer a Remotion-free tree.

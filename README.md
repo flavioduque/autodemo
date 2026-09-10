@@ -133,16 +133,24 @@ DemoMotion is early and honest about it. Everything below the line is proven by 
 - Structured event timeline with normalized interaction coordinates
 - `EditList`: cuts and constant-speed ramps in one model
 - Camera / zoom with real easing, correct aspect ratio (no silent crop), held final frame
+- **Synthetic cursor layer** — smoothed approach, click pulse, constant size under zoom
+- **Word-by-word captions** with a restrained karaoke highlight, auto-seeded from action labels
+- **Transitions** — crossfade at every cut, plus opening and closing fades
 - Timed callouts anchored in source time
 - Real H.264 MP4 render via the [HyperFrames](https://github.com/heygen-com/hyperframes) compositor
 - Render telemetry **off by default** (see below)
 
+Every layer above — zoom, cursor, captions, callouts — is anchored to *when it happened* and projected through the edit list. Cut a boring stretch and all of them follow; anything whose source instant was cut simply does not appear.
+
 **Roadmap**
-- Synthetic cursor layer (smoothing, click pulse) decoupled from the recording
-- Script-first captions and optional voiceover (TTS)
-- Automatic scene detection and pacing
+- Voiceover (TTS). The caption schema already stores per-word timings, so real audio alignment drops in without touching the compositor.
+- Automatic scene detection and pacing — deciding *where* to cut (the `EditList` can already express it)
 - VLM-based visual validation of the rendered output
 - Native desktop capture behind the same tool surface
+
+**Known limitations**
+- A crossfade shows ~180 ms of adjacent cut material under a partly transparent clip — that is what an NLE handle is. Set `cutTransitionMs: 0` for hard cuts.
+- Cutting *inside* a caption drops the words after the cut; place cuts between captions.
 
 ## Determinism, security & telemetry
 

@@ -22,6 +22,27 @@ function elapsed(session: Session) {
   return Date.now() - session.startedAt;
 }
 
+/**
+ * Launches the capture browser.
+ *
+ * By default Playwright's bundled Chromium is used so CI stays deterministic.
+ * Setting DEMOMOTION_BROWSER_CHANNEL (e.g. "chrome" or "msedge") makes Playwright
+ * drive a locally installed browser instead — useful on hosts where the bundled
+ * Chromium build is unavailable.
+ */
+async function launchBrowser(headless: boolean): Promise<Browser> {
+  const channel = process.env.DEMOMOTION_BROWSER_CHANNEL?.trim() || undefined;
+  try {
+    return await chromium.launch(channel ? { headless, channel } : { headless });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const hint = channel
+      ? `Browser channel "${channel}" could not be launched; install that browser or unset DEMOMOTION_BROWSER_CHANNEL to fall back to the bundled Chromium.`
+      : `Failed to launch Playwright's bundled Chromium; if it is missing or unsupported on this host, set DEMOMOTION_BROWSER_CHANNEL=chrome to drive the locally installed Google Chrome instead.`;
+    throw new Error(`${hint}\n\nOriginal launch error: ${detail}`, { cause: error });
+  }
+}
+
 export async function startSession(opts: {
   width: number;
   height: number;
@@ -31,7 +52,7 @@ export async function startSession(opts: {
   const dir = path.resolve("data/sessions", id);
   await fs.mkdir(dir, { recursive: true });
 
-  const browser = await chromium.launch({ headless: opts.headless });
+  const browser = await launchBrowser(opts.headless);
   const context = await browser.newContext({
     viewport: { width: opts.width, height: opts.height },
     recordVideo: {

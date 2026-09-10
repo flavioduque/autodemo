@@ -1,3 +1,3 @@
 import { registerRoot } from "remotion";
-import { Root } from "./root";
+import { Root } from "./root.js";
 registerRoot(Root);

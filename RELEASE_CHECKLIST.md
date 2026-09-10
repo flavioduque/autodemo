@@ -8,8 +8,12 @@
 - [x] Interaction values are redacted from capture metadata.
 - [x] URL protocol validation and optional hostname allowlist.
 - [x] Auto-zoom core has deterministic tests.
-- [x] TypeScript/TSX syntax/transpile validation passes locally.
-- [x] GitHub Actions workflow performs dependency install, Chromium install, typecheck, tests and build.
-- [ ] Full dependency installation and MP4 render must pass in an internet-enabled environment/CI before tagging 1.0.0.
+- [x] `pnpm typecheck`, `pnpm test` and `pnpm build` pass locally with real dependencies installed (the offline transpile-only validation scripts were removed).
+- [x] GitHub Actions workflow performs dependency install, Chromium install (scoped to `@demomotion/mcp-server`), typecheck, tests and build.
+- [x] Remotion bundling of `apps/studio` succeeds (`remotion bundle src/index.ts`).
+- [ ] An actual Remotion MP4 render must pass before tagging 1.0.0 — not yet executed.
 
-The local execution environment used during development could not resolve registry.npmjs.org, so dependency installation and an actual Remotion MP4 render were not falsely marked as completed.
+Note on browser provisioning: Playwright 1.63.0 has no bundled Chromium build for
+macOS 13, so capture on such hosts requires `DEMOMOTION_BROWSER_CHANNEL=chrome`
+(verified by execution: Google Chrome 152 launches and records). CI on
+`ubuntu-latest` still uses the bundled Chromium.

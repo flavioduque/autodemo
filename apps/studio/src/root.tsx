@@ -1,6 +1,6 @@
 import React from "react";
 import { Composition } from "remotion";
-import { DemoMotion } from "./video/DemoMotion";
+import { DemoMotion } from "./video/DemoMotion.js";
 import { DemoProjectSchema } from "@demomotion/schema";
 
 const defaultProps = {

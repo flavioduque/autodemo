@@ -216,17 +216,73 @@ Fora (adiado, com razão):
 - Adapter de desktop, adapter de replay de DOM
 - Qualquer coisa de nuvem
 
-## 8. O que permanece não verificado
+## 8. Estado de verificação (levantamento de 2026-09-09)
 
-Esta seção existe para não criar confiança falsa e será atualizada com o resultado
-do levantamento em execução:
+Levantamento executado nesta máquina: Darwin 22.6.0 (macOS 13), Node v26.8.1,
+pnpm 10.17.1, ffmpeg 7.1.1.
 
-- Se as dependências fixadas instalam e resolvem juntas.
-- Se a API do `@modelcontextprotocol/server@2.0.0` usada em
-  `apps/mcp-server/src/index.ts` corresponde à do pacote publicado — em especial
-  se `registerTool` aceita `z.object(...)` ou uma shape crua, e se o subpath
-  `stdio` exporta `serveStdio`.
-- Se o Remotion renderiza um MP4 nesta máquina.
-- Throughput real do screencast a 30fps/1080p, e quanto ele deforma o que a demo
-  mostra. **É o principal risco técnico da abordagem escolhida** e precisa de uma
-  medição antes de a implementação depender dela.
+### Verificado por execução — funciona
+
+- `pnpm install` sai 0. As quatro dependências que eu havia tratado como suspeitas
+  são todas reais e instalam nas versões fixadas: `@modelcontextprotocol/server@2.0.0`,
+  `playwright@1.63.0`, `remotion@4.0.521`, `typescript@6.0.3` (de `^6.0.0`).
+- **A superfície MCP está correta.** `registerTool` aceita `z.object(...)` — e essa
+  é a forma **preferida**; a shape crua é que está marcada `@deprecated`. O
+  `serveStdio` existe no subpath `./stdio`. Verificado lendo o `.d.mts`/`.mjs`
+  instalado **e** executando uma chamada real de `registerTool` que produziu JSON
+  Schema válido. A hipótese de reescrita da camada MCP está descartada.
+- **O servidor sobe e fala protocolo.** Handshake `initialize` respondido
+  (`protocolVersion 2025-06-18`), `tools/list` devolveu as 15 ferramentas com
+  schemas corretos.
+- `pnpm test` sai 0: 3 de 3 asserções, todas em `packages/core/test/zoom.test.ts`.
+  Escopo da cobertura: **1 arquivo de teste, 1 função pura**. Nada em
+  `apps/mcp-server` ou `apps/studio` é exercitado.
+
+### Verificado por execução — quebrado
+
+- `pnpm typecheck` falha com 3 erros: dois em `apps/studio` (TS2835, NodeNext exige
+  extensão `.js` explícita) e um em `apps/mcp-server:131` (TS2345, `style`
+  todo-opcional do schema de `project_update` contra o `Partial<Pick<...>>` de
+  `updateProject`).
+- `pnpm build` falha **e mesmo assim emite `dist/`**, porque `noEmitOnError` está
+  desligado. Um `dist/` populado não é prova de build verde.
+- `pnpm -r` aborta no primeiro projeto que falha e **mascara** os de baixo: o erro
+  do mcp-server só apareceu rodando aquele projeto sozinho.
+- `pnpm dev:mcp` escreve 8 linhas de banner no **stdout** antes do primeiro frame
+  JSON-RPC — e é exatamente o comando que o README entrega aos clientes MCP.
+- O comando de provisionamento documentado (`pnpm exec playwright install chromium`,
+  da raiz) **não alcança o Playwright do repositório**. Nesta máquina ele caiu num
+  Playwright de sistema, saiu 0 e removeu um navegador do cache. Zero ali é
+  artefato, não resultado.
+
+### O bloqueio de plataforma
+
+```
+ERROR: Playwright does not support chromium on mac13
+```
+
+Playwright 1.63.0 exige `chromium-1243`, que não tem build para macOS 13.
+`chromium.launch()` falha com `Executable doesn't exist`. **Toda a metade de
+captura está inoperante nesta máquina** — não por bug de código, mas por conflito
+entre o pin de versão e o SO.
+
+**Decisão:** o lançamento do browser passa a ser configurável por
+`DEMOMOTION_BROWSER_CHANNEL`. Definido como `chrome`, usa o Google Chrome instalado
+(152.0.7977.84 nesta máquina), que funciona no macOS 13 sem download. Não definido,
+mantém o Chromium empacotado — a CI continua determinística, como pede o §26 do
+documento original. O CDP screencast do §4 funciona igual nos dois.
+
+### Ainda não verificado — não leia como saudável
+
+- **Toda ferramenta de captura** (`session_start`, `browser_*`, `session_stop`):
+  bloqueada pelo problema acima. Provou-se apenas que estão *listadas*; nenhuma foi
+  chamada.
+- **`render_video`, `demo_finalize`, `project_build`, `project_update` em runtime.**
+  Não existe captura para alimentá-los, e um `capture.json` escrito à mão seria um
+  seed que nunca passou pelo produto — deliberadamente não foi fabricado.
+- **Render Remotion de ponta a ponta.** Nenhum MP4 foi produzido até aqui.
+- **Throughput do screencast a 30fps/1080p** — segue sendo o principal risco técnico
+  da abordagem escolhida, e precisa de medição antes de a implementação depender dele.
+- **Paridade com a CI.** A CI fixa Node 22 em `ubuntu-latest`; tudo acima foi
+  observado em Node 26 / macOS 13. Os erros de typecheck são independentes de
+  plataforma e falhariam na CI também; o de Playwright é específico do macOS 13.

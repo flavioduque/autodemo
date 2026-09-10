@@ -38,3 +38,4 @@ export function compactInteractiveElements(items: Array<{tag:string; text:string
 }
 
 export * from "./editlist.ts";
+export * from "./cursor.ts";

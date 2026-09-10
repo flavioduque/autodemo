@@ -1,0 +1,33 @@
+# DemoMotion architecture
+
+## Goal
+
+An AI agent owns the full product-demo workflow: inspect a web app, plan a concise journey, operate it, record it, convert interactions into an editable timeline, apply creative treatment, render with Remotion, and validate the output.
+
+## Control flow
+
+AI client → MCP v2 → capture adapter → immutable raw assets + event stream → project compiler → editable `project.json` → Remotion → MP4.
+
+## Stable MCP surface
+
+Capture backends must be replaceable without changing the agent-facing contract.
+
+Current backend: Playwright video capture.
+Planned high-fidelity backend: Remotion Canvas Capture for supported web workflows.
+Future backend: native desktop capture for macOS/Windows/Linux.
+
+## Source-of-truth rule
+
+Capture facts once; make creative decisions later.
+
+Raw recording and action metadata are source assets. Zoom, framing, callouts, captions, titles, transitions, audio treatment and voiceover belong to the Remotion composition layer.
+
+## Security
+
+`browser_fill` redacts values from timeline metadata. This does not hide values visibly rendered by the target application; demo accounts and non-sensitive data remain mandatory.
+
+`DEMOMOTION_ALLOWED_HOSTS` can restrict navigation hosts. Only HTTP and HTTPS URLs are accepted.
+
+## Recordly relationship
+
+Recordly is a product/UX reference only. DemoMotion is an independent implementation and does not include Recordly source code.

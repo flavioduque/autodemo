@@ -1,0 +1,25 @@
+{
+  "name": "@demomotion/studio",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@demomotion/schema": "workspace:*",
+    "@remotion/cli": "4.0.521",
+    "@remotion/media": "4.0.521",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "remotion": "4.0.521",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "typescript": "^6.0.0"
+  }
+}

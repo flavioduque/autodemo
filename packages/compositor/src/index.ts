@@ -301,8 +301,13 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
     color:${escapeHtml(project.style.captionColor)};text-shadow:0 2px 6px rgba(0,0,0,.5)}
   /* inline-block so the active word can take a transform; the transparent border
      is the slot the accent underline fades into, so nothing reflows on highlight. */
-  .cap-w{display:inline-block;border-bottom:2px solid rgba(0,0,0,0);padding-bottom:2px;
-    will-change:transform,color}
+  /* Horizontal padding, not just the HTML space between spans: the active word
+     takes a scale transform, and an inline-block grows from its centre, so at
+     rest-adjacent sizes it visually swallows the gap and reads as "wordword".
+     The em padding keeps a gap that scales with the type; the HTML space is
+     still there so lines can wrap between words. */
+  .cap-w{display:inline-block;border-bottom:2px solid rgba(0,0,0,0);
+    padding:0 .08em 2px;will-change:transform,color}
   /* Opening and closing fade, painted in the background colour over everything.
      Starts transparent: with both fades at 0 ms it is simply never touched. */
   #fade{position:absolute;left:0;top:0;width:100%;height:100%;background:${project.style.background};

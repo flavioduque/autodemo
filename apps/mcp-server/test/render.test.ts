@@ -424,3 +424,132 @@ test("the composition opens and closes on the background colour", { skip, timeou
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Reframing, measured in rendered pixels.
+//
+// The fixture scene puts an EXACTLY 128x128 marker flush in each corner of the
+// 1920x1080 frame, in four known colours. That makes "which slice of the capture
+// did the vertical cut keep" answerable from the output file alone: the markers
+// on the side the crop kept are on screen, the ones on the side it dropped are
+// not, and the kept ones must still be square.
+// ---------------------------------------------------------------------------
+
+/** Every pixel of one extracted frame that is close to `rgb`, as a mask. */
+async function colorMask(mp4: string, atSec: number, rgb: [number, number, number], width: number, height: number) {
+  const { stdout } = await run("ffmpeg", [
+    "-v", "error", "-ss", String(atSec), "-i", mp4, "-frames:v", "1",
+    "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+  ], { encoding: "buffer", maxBuffer: 256 * 1024 * 1024 });
+  const buf = stdout as unknown as Buffer;
+  assert.equal(buf.length, width * height * 3, "unexpected raw frame size");
+  const rows = new Int32Array(height);
+  const cols = new Int32Array(width);
+  let count = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 3;
+      if (Math.abs(buf[i] - rgb[0]) <= 28 && Math.abs(buf[i + 1] - rgb[1]) <= 28 && Math.abs(buf[i + 2] - rgb[2]) <= 28) {
+        count++;
+        rows[y]++;
+        cols[x]++;
+      }
+    }
+  }
+  return { count, rows, cols };
+}
+
+/**
+ * The box of the SOLID block of `rgb`: the rows and columns carrying at least
+ * `floor` matching pixels.
+ *
+ * A plain bounding box cannot be used here. H.264 leaves a handful of stray
+ * pixels inside the tolerance at the far edge of the picture — four of them, out
+ * of 28160 — and a bounding box over every match therefore measured the marker
+ * as 958 px wide. The floor keeps the marker's own rows and columns (~185
+ * matches each) and drops noise, which is the property being measured.
+ */
+function solidBox(mask: { rows: Int32Array; cols: Int32Array }, floor = 20) {
+  const span = (counts: Int32Array) => {
+    let min = -1;
+    let max = -1;
+    for (let i = 0; i < counts.length; i++) {
+      if (counts[i] >= floor) {
+        if (min < 0) min = i;
+        max = i;
+      }
+    }
+    assert.ok(min >= 0, `no line of the frame carries ${floor} matching pixels`);
+    return max - min + 1;
+  };
+  return { width: span(mask.cols), height: span(mask.rows) };
+}
+
+async function frameSize(mp4: string) {
+  const { stdout } = await run("ffprobe", [
+    "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", mp4
+  ]);
+  const stream = JSON.parse(stdout).streams[0];
+  return { width: Number(stream.width), height: Number(stream.height) };
+}
+
+const TR_GREEN: [number, number, number] = [22, 163, 74];  // .corner--tr { background: #16a34a }
+
+test("a 16:9 capture published 9:16 is vertical, and keeps the side the action is on",
+  { skip, timeout: TIMEOUT }, async () => {
+  const source = await fixtureSourceVideo();
+  const dir = await tmpdir();
+  try {
+    // One interaction, on the TOP-RIGHT marker: its centre is 64 px in from the
+    // right and 64 px down, i.e. (1856/1920, 64/1080) of the capture. Everything
+    // below follows from that single literal.
+    const action = { id: "a1", type: "click", atMs: 2000, durationMs: 30, x: 1856 / 1920, y: 64 / 1080 };
+    const common = {
+      durationMs: 8000,
+      editList: [{ sourceFromMs: 0, sourceToMs: 8000, speed: 1 }],
+      actions: [action]
+    };
+
+    // The control render: the SAME project at its native frame. It is what tells
+    // us the markers are visible at all, so "the red one is gone" is a finding
+    // and not an artefact of a black frame or a failed render.
+    const native = syntheticProject(source, common);
+    const nativePath = path.join(dir, "native.mp4");
+    await renderCompositionHtml(generateComposition(native, { videoSrc: videoSrcName(source) }), source, nativePath, videoSrcName(source));
+
+    assert.deepEqual(await frameSize(nativePath), { width: 1920, height: 1080 });
+    const nativeRed = (await colorMask(nativePath, 2, TL_RED, 1920, 1080)).count;
+    const nativeGreen = (await colorMask(nativePath, 2, TR_GREEN, 1920, 1080)).count;
+    assert.ok(nativeRed > 2000, `the control render does not show the left marker at all (${nativeRed} px)`);
+    assert.ok(nativeGreen > 2000, `the control render does not show the right marker at all (${nativeGreen} px)`);
+
+    // The vertical render: same capture, same actions, one new field.
+    const vertical = syntheticProject(source, { ...common, output: { width: 1080, height: 1920 } });
+    const verticalPath = path.join(dir, "vertical.mp4");
+    await renderCompositionHtml(generateComposition(vertical, { videoSrc: videoSrcName(source) }), source, verticalPath, videoSrcName(source));
+
+    // Half one: the file really is a vertical video.
+    assert.deepEqual(await frameSize(verticalPath), { width: 1080, height: 1920 });
+
+    // Half two: the crop followed the action. The click is against the right
+    // edge, so the crop clamps flush right and covers source x in
+    // [0.68359375, 1] — the green marker is inside it, the red one is not.
+    const verticalMask = await colorMask(verticalPath, 2, TR_GREEN, 1080, 1920);
+    const verticalRed = (await colorMask(verticalPath, 2, TL_RED, 1080, 1920)).count;
+    assert.ok(verticalMask.count > 2000, `the clicked corner is not in the vertical frame (${verticalMask.count} px)`);
+    assert.ok(verticalRed < nativeRed * 0.02,
+      `the vertical cut still shows the far side of the capture (${verticalRed} px, control ${nativeRed})`);
+
+    // Half three: what survived is not stretched. The marker's coloured fill is
+    // 128 - 2*6 = 116 source px, and the crop magnifies the width by
+    // 968 / (0.31640625 * 1920) = 1.5934, so it lands as a 184.8 px SQUARE. A
+    // crop that stretched instead of magnifying would still pass every count
+    // above and fail here.
+    const marker = solidBox(verticalMask);
+    const ratio = marker.width / marker.height;
+    assert.ok(Math.abs(ratio - 1) < 0.04, `the reframed marker is ${marker.width}x${marker.height} — not square`);
+    assert.ok(Math.abs(marker.width - 185) <= 4, `expected a ~185 px marker, got ${marker.width}`);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

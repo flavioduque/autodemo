@@ -72,12 +72,36 @@ export const CaptionSchema = z.object({
   words: z.array(CaptionWordSchema).default([])
 }).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
 
+/**
+ * The frame the video is RENDERED at, when it differs from the frame it was
+ * recorded at.
+ *
+ * WHY A SEPARATE, OPTIONAL PAIR AND NOT A RENAME. `width`/`height` are the
+ * capture's own dimensions, and every normalized coordinate in the project —
+ * action `x`/`y`, zoom anchors, the cursor track — is expressed against THAT
+ * frame. Renaming them, or redefining them as "the output", would silently
+ * reinterpret every project.json already on disk. So the recorded frame keeps
+ * its name, and the new frame is the one that did not exist before.
+ *
+ * ABSENT MEANS "the same as the source", which is exactly what one pair meant:
+ * an old project renders byte-for-byte as it did. And the pair is one object
+ * rather than two loose fields, so a half-specified canvas (a width with no
+ * height) cannot be expressed at all.
+ */
+export const OutputFrameSchema = z.object({
+  width: z.number().int().positive(),
+  height: z.number().int().positive()
+});
+
 export const DemoProjectSchema = z.object({
   version: z.literal(1),
   title: z.string(),
   sourceVideo: z.string(),
+  /** The RECORDED frame. Normalized coordinates live in this frame. */
   width: z.number().positive().default(1920),
   height: z.number().positive().default(1080),
+  /** The RENDERED frame. Absent = the recorded frame. */
+  output: OutputFrameSchema.optional(),
   fps: z.number().positive().default(30),
   durationMs: z.number().positive(),
   style: z.object({
@@ -129,3 +153,15 @@ export type DemoZoom = z.infer<typeof ZoomSchema>;
 export type DemoEditSegment = z.infer<typeof EditSegmentSchema>;
 export type DemoCaption = z.infer<typeof CaptionSchema>;
 export type DemoCaptionWord = z.infer<typeof CaptionWordSchema>;
+
+export type DemoOutputFrame = z.infer<typeof OutputFrameSchema>;
+
+/** The frame the capture was recorded at: where every normalized coordinate lives. */
+export function sourceSize(project: Pick<DemoProject, "width" | "height">): { width: number; height: number } {
+  return { width: project.width, height: project.height };
+}
+
+/** The frame the video is rendered at. Absent output = the source frame. */
+export function outputSize(project: Pick<DemoProject, "width" | "height" | "output">): { width: number; height: number } {
+  return project.output ? { width: project.output.width, height: project.output.height } : sourceSize(project);
+}

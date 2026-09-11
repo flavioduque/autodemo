@@ -60,6 +60,55 @@ export function stageStyle(html: string): Record<string, string> {
   return out;
 }
 
+/** The wrapper that holds the video: its layout size is the source frame's box. */
+export function camStyle(html: string): Record<string, string> {
+  const m = /<div\b[^>]*id="cam"[^>]*style="([^"]*)"[^>]*>/.exec(html);
+  if (!m) throw new Error("no #cam element in generated HTML");
+  const out: Record<string, string> = {};
+  for (const decl of m[1].split(";")) {
+    const i = decl.indexOf(":");
+    if (i > 0) out[decl.slice(0, i).trim()] = decl.slice(i + 1).trim();
+  }
+  return out;
+}
+
+/**
+ * The slice of the SOURCE frame that is on screen, in normalized source units.
+ *
+ * Decoded from the document the way a browser would: #stage is the window, #cam
+ * carries the whole source frame at its layout size, and the CSS transform on
+ * #cam decides which part of it lands in the window. Nothing here re-uses the
+ * compositor's own framing math, so a wrong rectangle cannot agree with itself.
+ */
+export function visibleSourceRect(html: string, cam: any): { x: number; y: number; width: number; height: number } {
+  const stage = stageStyle(html);
+  const camBox = camStyle(html);
+  const stageW = px(stage.width);
+  const stageH = px(stage.height);
+  const camW = px(camBox.width);
+  const camH = px(camBox.height);
+  const transform = cam.style.transform ?? "";
+  const scale = /scale\(([-\d.eE+]+)\)/.exec(transform);
+  if (!scale) throw new Error(`no scale in transform: ${transform}`);
+  const s = Number(scale[1]);
+  const translate = /translate\(([-\d.eE+]+)px,\s*([-\d.eE+]+)px\)/.exec(transform);
+  // Without reframing the composition uses transform-origin + scale, which is
+  // the same rectangle written differently: origin (x,y) stays fixed under scale.
+  if (!translate) {
+    const origin = /([-\d.eE+]+)%\s+([-\d.eE+]+)%/.exec(cam.style.transformOrigin ?? "");
+    if (!origin) throw new Error(`no translate and no transform-origin: ${cam.style.transformOrigin}`);
+    const ox = Number(origin[1]) / 100;
+    const oy = Number(origin[2]) / 100;
+    return { x: ox * (1 - 1 / s), y: oy * (1 - 1 / s), width: 1 / s, height: 1 / s };
+  }
+  return {
+    x: -Number(translate[1]) / (camW * s),
+    y: -Number(translate[2]) / (camH * s),
+    width: stageW / (camW * s),
+    height: stageH / (camH * s)
+  };
+}
+
 export function px(value: string): number {
   const m = /^(-?[\d.]+)px$/.exec(value);
   if (!m) throw new Error(`not a px value: ${value}`);

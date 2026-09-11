@@ -5,6 +5,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import * as schema from "@demomotion/schema";
 import { DemoProjectSchema } from "@demomotion/schema";
+import { generateComposition } from "@demomotion/compositor";
 import { buildProject, updateProject } from "../src/project.ts";
 
 /** A minimal valid project, minus whatever the test under way is varying. */
@@ -132,4 +133,44 @@ test("updateProject persists an edit and leaves the rest of the project alone", 
   assert.equal(written.durationMs, 7000);
   assert.deepEqual(written.zooms, before.zooms);
   assert.deepEqual(written.actions, before.actions);
+});
+
+test("an existing 16:9 capture can be reframed to 9:16 without recording again", async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-test-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+
+  // Seed through the product: the project comes out of buildProject, exactly as
+  // an agent would have it after a landscape recording.
+  const manifestPath = path.join(dir, "capture.json");
+  await fs.writeFile(manifestPath, JSON.stringify({
+    videoPath: path.join(dir, "page.webm"),
+    width: 1920,
+    height: 1080,
+    durationMs: 7000,
+    actions: [{ id: "a1", type: "click", atMs: 3000, durationMs: 20, x: 0.7, y: 0.4 }]
+  }));
+  const { project: before, projectPath } = await buildProject(manifestPath, "Reframe me");
+
+  // Control: a fresh project has NO output frame, and renders landscape. Without
+  // this the assertion below could pass on a project that was already vertical.
+  assert.equal(before.output, undefined);
+  assert.match(generateComposition(before), /data-width="1920" data-height="1080"/);
+
+  const after = await updateProject(projectPath, { output: { width: 1080, height: 1920 } });
+
+  // Positive half: the new frame reached the file, and the composition built
+  // from that file is vertical.
+  const written = JSON.parse(await fs.readFile(projectPath, "utf8"));
+  assert.deepEqual(written.output, { width: 1080, height: 1920 });
+  assert.match(generateComposition(after), /data-width="1080" data-height="1920"/);
+
+  // Other half: nothing about the RECORDING moved. The capture's own frame, its
+  // duration, its actions and the zooms derived from them are untouched — which
+  // is the point of reframing being an edit rather than a re-record.
+  assert.equal(written.width, 1920);
+  assert.equal(written.height, 1080);
+  assert.equal(written.durationMs, 7000);
+  assert.deepEqual(written.actions, before.actions);
+  assert.deepEqual(written.zooms, before.zooms);
+  assert.equal(written.sourceVideo, before.sourceVideo);
 });

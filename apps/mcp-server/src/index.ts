@@ -75,6 +75,17 @@ export const browserFillInput = z.object({
 export const projectUpdateInput = z.object({
   projectPath: z.string(),
   title: z.string().optional(),
+  /**
+   * The frame the video is RENDERED at, when it should differ from the frame it
+   * was recorded at. This is what makes a vertical cut of a landscape capture an
+   * EDIT rather than a second recording: the camera crops a rectangle of the
+   * output's aspect ratio out of the source and walks it across the interactions.
+   * Omit it to render at the capture's own frame.
+   */
+  output: z.object({
+    width: z.number().int().min(640).max(3840),
+    height: z.number().int().min(480).max(3840)
+  }).optional(),
   style: z.object({
     background: z.string().optional(), padding: z.number().min(0).max(300).optional(),
     radius: z.number().min(0).max(100).optional(), shadow: z.boolean().optional(),
@@ -202,7 +213,7 @@ function createServer() {
 
 
   server.registerTool("project_update", {
-    description: "Update editable project styling, zooms, edit list (cuts and speed ramps), callouts, captions (word-by-word narration) or title without modifying the raw recording.",
+    description: "Update editable project styling, output frame (reframing: render a 16:9 capture as a 9:16 social cut without recording again), zooms, edit list (cuts and speed ramps), callouts, captions (word-by-word narration) or title without modifying the raw recording.",
     inputSchema: projectUpdateInput
   }, async ({projectPath, ...patch}) => result(await updateProject(projectPath, patch)));
 

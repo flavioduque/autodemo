@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { DemoProjectSchema } from "@demomotion/schema";
 import { buildProject, updateProject } from "../src/project.ts";
-import { projectUpdateInput } from "../src/index.ts";
+import { projectUpdateInput } from "../src/server.ts";
 
 const baseProject = (overrides: Record<string, unknown> = {}) => ({
   version: 1 as const,

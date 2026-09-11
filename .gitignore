@@ -19,3 +19,7 @@ apps/*/data/
 # Mídia do README é versionada de propósito (a vitrine do projeto)
 !docs/assets/demo.gif
 !docs/assets/demo.mp4
+
+# copiados da raiz pelo build do pacote publicável (apps/mcp-server/scripts/build.mjs)
+apps/mcp-server/README.md
+apps/mcp-server/LICENSE

@@ -220,6 +220,22 @@ export class ScreencastCapture {
   }
 }
 
+/**
+ * Turns the `spawn ffmpeg ENOENT` a missing binary produces into a refusal that
+ * names the tool and the fix. It fires at `session_stop`, the first moment the
+ * encoder is needed; `demomotion mcp` also warns about it at startup.
+ */
+export function toolMissingError(tool: "ffmpeg" | "ffprobe", error: unknown): Error {
+  if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+  return new Error(
+    `${tool} is not installed or not on PATH; DemoMotion needs ffmpeg and ffprobe to assemble the capture at session_stop. ` +
+    `Install ffmpeg (macOS: brew install ffmpeg; Debian/Ubuntu: apt-get install ffmpeg; Windows: winget install ffmpeg) and restart the server.`,
+    { cause: error }
+  );
+}
+
 function encodeCfr(seqDir: string, out: string, fps: number): Promise<void> {
   const args = [
     "-y",
@@ -237,7 +253,7 @@ function encodeCfr(seqDir: string, out: string, fps: number): Promise<void> {
     const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
     let err = "";
     child.stderr.on("data", (d) => { err += d.toString(); });
-    child.on("error", reject);
+    child.on("error", (error) => reject(toolMissingError("ffmpeg", error)));
     child.on("close", (code) => {
       if (code === 0) resolve();
       else reject(new Error(`ffmpeg exited ${code}: ${err.slice(-2000)}`));
@@ -257,7 +273,7 @@ function probeSize(video: string): Promise<{ width: number; height: number }> {
     const child = spawn("ffprobe", args, { stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     child.stdout.on("data", (d) => { out += d.toString(); });
-    child.on("error", reject);
+    child.on("error", (error) => reject(toolMissingError("ffprobe", error)));
     child.on("close", () => {
       const m = out.trim().match(/^(\d+)x(\d+)/);
       if (!m) return reject(new Error(`ffprobe could not read size: ${out}`));

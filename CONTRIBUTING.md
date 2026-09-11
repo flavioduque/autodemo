@@ -13,6 +13,11 @@ pnpm build
 On hosts without a bundled Chromium build for your platform, set
 `DEMOMOTION_BROWSER_CHANNEL=chrome` to drive a locally installed Google Chrome.
 
+To run the suite against a specific Chromium binary — the `chrome-headless-shell`
+CI uses, say, when it is not installed as a channel on your host — set
+`DEMOMOTION_BROWSER_EXECUTABLE=/path/to/binary`. It wins over the channel and
+over the bundled build.
+
 ## Slow tests
 
 `pnpm test` runs every fast test plus the browser-driven ones that pin visible

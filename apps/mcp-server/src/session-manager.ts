@@ -656,6 +656,23 @@ export async function stopSession(id: string) {
   return { ...manifest, manifestPath };
 }
 
+/**
+ * Tears a session down WITHOUT producing a capture: the browser is closed and
+ * the id forgotten. This is the fallback `demo_create` reaches for when a
+ * failed run cannot even be stopped normally (`stopSession` threw half-way,
+ * say, with the browser still up) — a leaked Chrome is the one outcome that is
+ * never acceptable. Closing a browser that is already gone is not an error.
+ */
+export async function destroySession(id: string) {
+  const s = getSession(id);
+  sessions.delete(id);
+  // Not `capture.stop()`: that assembles the video with ffmpeg, which is what a
+  // failed `stopSession` may just have choked on. Closing the browser ends the
+  // screencast's CDP session with it.
+  try { await s.context.close(); } catch { /* already closed */ }
+  try { await s.browser.close(); } catch { /* already closed */ }
+}
+
 export function status(id: string) {
   const s = getSession(id);
   return {

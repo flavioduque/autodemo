@@ -1,13 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DemoProjectSchema, type DemoProject } from "@demomotion/schema";
+import { DemoProjectSchema, durationMs, type DemoProject, type DemoProjectInput } from "@demomotion/schema";
 import { buildAutoZooms, buildCaptionSkeleton } from "@demomotion/core";
 
 export type BuildProjectOptions = {
   /**
    * How long a skeleton caption stays up when nothing follows it. A pacing
    * preset names its own (SKILL.md section 2); `project_build` leaves it at the
-   * core default.
+   * core default. A plain number: it is a knob handed in by a caller, and it is
+   * branded here, at the boundary, before core sees it.
    */
   captionHoldMs?: number;
 };
@@ -18,7 +19,10 @@ export async function buildProject(captureManifestPath: string, title: string, o
   if (!Array.isArray(raw.actions)) throw new Error("Capture manifest has no actions array");
   if (!Number.isFinite(raw.durationMs) || raw.durationMs <= 0) throw new Error("Invalid capture duration");
 
-  const project = DemoProjectSchema.parse({
+  // The manifest's numbers become time HERE, through the schema — not by being
+  // handed to core as untyped JSON. So the base project is parsed first, and the
+  // tracks core derives are computed from its branded actions and duration.
+  const base = DemoProjectSchema.parse({
     version: 1,
     title,
     sourceVideo: path.resolve(raw.videoPath),
@@ -30,16 +34,27 @@ export async function buildProject(captureManifestPath: string, title: string, o
     durationMs: raw.durationMs,
     style: { background: "#0b1020", padding: 56, radius: 24, shadow: true },
     actions: raw.actions,
-    zooms: buildAutoZooms(raw.actions, raw.durationMs),
+    zooms: [],
     // Identity edit: one segment over the whole capture at normal speed. The
     // render is unchanged until someone actually edits the timeline.
     editList: [{ sourceFromMs: 0, sourceToMs: raw.durationMs, speed: 1 }],
     callouts: [],
+    captions: []
+  });
+
+  // INGRESS: the caption hold is a knob, branded once on its way into core.
+  const holdMs = options.captionHoldMs === undefined ? undefined : durationMs(options.captionHoldMs);
+
+  // Parsed again so the derived tracks are validated exactly as any other
+  // project's would be (a caption with toMs <= fromMs is refused, not written).
+  const project = DemoProjectSchema.parse({
+    ...base,
+    zooms: buildAutoZooms(base.actions, base.durationMs),
     // A caption SKELETON, not finished narration: every labelled action becomes
     // a line already timed and split per word, so the agent only has to rewrite
     // the prose (project_update) instead of timing it. A capture with no labels
     // produces no captions.
-    captions: buildCaptionSkeleton(raw.actions, raw.durationMs, options.captionHoldMs)
+    captions: buildCaptionSkeleton(base.actions, base.durationMs, holdMs)
   });
 
   const projectPath = path.join(path.dirname(captureManifestPath), "project.json");
@@ -47,15 +62,20 @@ export async function buildProject(captureManifestPath: string, title: string, o
   return { project, projectPath };
 }
 
+/**
+ * A patch is the UN-BRANDED side of the boundary: it is what `project_update`
+ * receives as JSON and what `DemoProjectSchema.parse` accepts. The brands are
+ * put on by the parse inside `updateProject`, never by the caller.
+ */
 export type ProjectPatch = {
-  title?: DemoProject["title"];
+  title?: DemoProjectInput["title"];
   /** The rendered frame. Absent from the patch = leave it as it is. */
-  output?: DemoProject["output"];
-  style?: Partial<DemoProject["style"]>;
-  zooms?: DemoProject["zooms"];
-  editList?: DemoProject["editList"];
-  callouts?: DemoProject["callouts"];
-  captions?: DemoProject["captions"];
+  output?: DemoProjectInput["output"];
+  style?: Partial<DemoProjectInput["style"]>;
+  zooms?: DemoProjectInput["zooms"];
+  editList?: DemoProjectInput["editList"];
+  callouts?: DemoProjectInput["callouts"];
+  captions?: DemoProjectInput["captions"];
 };
 
 export async function updateProject(projectPath: string, patch: ProjectPatch) {

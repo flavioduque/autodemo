@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { CDPSession, Page } from "playwright";
+import { type SourceTimeMs, type DurationMs, SOURCE_ZERO, sourceMs, durationMs } from "@demomotion/schema";
 
 /**
  * Capture adapter contract (design spec §4).
@@ -23,7 +24,7 @@ export interface CaptureResult {
   height: number;
   frameCount: number;
   artifact: { kind: "video"; path: string };
-  durationMs: number;
+  durationMs: DurationMs;
 }
 
 /**
@@ -163,19 +164,22 @@ export class ScreencastCapture {
     this.pendingWrites.push(fs.writeFile(file, Buffer.from(params.data, "base64")));
   }
 
-  /**
-   * Current time on the capture's own line, in ms: the timestamp of the
-   * most-recent screencast frame, normalized to the first frame = 0. This is the
-   * time base events are stamped in — never `Date.now()`.
-   */
   /** Frames received so far — lets a caller prove the screencast is live before stopping. */
   get frameCount(): number {
     return this.frameCountIn;
   }
 
-  nowSourceMs(): number {
-    if (this.t0Sec === undefined) return 0;
-    return Math.round(this.lastRelSec * 1000);
+  /**
+   * Current time on the capture's own line, in ms: the timestamp of the
+   * most-recent screencast frame, normalized to the first frame = 0. This is the
+   * time base events are stamped in — never `Date.now()`.
+   *
+   * INGRESS: this is where a CDP timestamp becomes a `SourceTimeMs`. Every
+   * action's `atMs` descends from this one call.
+   */
+  nowSourceMs(): SourceTimeMs {
+    if (this.t0Sec === undefined) return SOURCE_ZERO;
+    return sourceMs(Math.round(this.lastRelSec * 1000));
   }
 
   async stop(): Promise<CaptureResult> {
@@ -225,7 +229,8 @@ export class ScreencastCapture {
       height,
       frameCount: grid.length,
       artifact: { kind: "video", path: videoPath },
-      durationMs: Math.round(durationSec * 1000)
+      // INGRESS: the wall-clock length of the capture becomes a `DurationMs`.
+      durationMs: durationMs(Math.round(durationSec * 1000))
     };
   }
 }

@@ -144,7 +144,7 @@ function createServer() {
   }, async ({sessionId, key}) => { await keypress(sessionId, key); return result({ok:true}); });
 
   server.registerTool("browser_goto", {
-    description: "Navigate the recorded browser to a URL.",
+    description: "Navigate the recorded browser to a URL. Only http/https, and only to a host in DEMOMOTION_ALLOWED_HOSTS (default: localhost, 127.0.0.1, ::1 — every port). A URL off the allowlist fails BY DESIGN with a message naming the host and the variable; redirects, links, fetches and WebSockets to hosts off the allowlist are blocked at the network layer and listed in session_status as blockedRequests. Do not work around it: ask the operator to extend the allowlist.",
     inputSchema: z.object({ sessionId: z.string(), url: z.url() })
   }, async ({sessionId, url}) => {
     await goto(sessionId, url);
@@ -194,12 +194,12 @@ function createServer() {
   }, async ({sessionId, name}) => result({ path: await screenshot(sessionId, name) }));
 
   server.registerTool("session_status", {
-    description: "Inspect current session duration, URL and action count.",
+    description: "Inspect current session duration, URL, action count, the active host allowlist and blockedRequests — every request the network policy refused (navigation, redirect, sub-resource or WebSocket), with the host and the reason. A non-empty list after a step means the page tried to reach somewhere off the allowlist.",
     inputSchema: z.object({ sessionId: z.string() })
   }, async ({sessionId}) => result(status(sessionId)));
 
   server.registerTool("session_stop", {
-    description: "Stop recording and persist capture.json with source video and action timeline.",
+    description: "Stop recording and persist capture.json with source video, action timeline and blockedRequests (every request the network policy refused during the session).",
     inputSchema: z.object({ sessionId: z.string() })
   }, async ({sessionId}) => result(await stopSession(sessionId)));
 

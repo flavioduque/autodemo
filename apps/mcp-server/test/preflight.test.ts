@@ -54,6 +54,31 @@ test("preflight checks the channel binary when DEMOMOTION_BROWSER_CHANNEL is set
   assert.equal(present.warnings.filter((w) => /Chromium|channel/i.test(w)).length, 0, JSON.stringify(present.warnings));
 });
 
+test("preflight checks the binary when DEMOMOTION_BROWSER_EXECUTABLE is set, and it wins over the channel", async () => {
+  // The path is what will be launched: a missing one is named, with the fixes.
+  const missing = await preflight({
+    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_EXECUTABLE: "/definitely/not/here/chrome-headless-shell", DEMOMOTION_BROWSER_CHANNEL: "chrome" },
+    bundledExecutable: process.execPath,
+    channelCandidates: () => [process.execPath]
+  });
+  assert.equal(missing.browser, "missing");
+  const warning = missing.warnings.find((w) => /DEMOMOTION_BROWSER_EXECUTABLE/.test(w));
+  assert.ok(warning, JSON.stringify(missing.warnings));
+  assert.match(warning, /^no usable capture browser: /);
+  assert.match(warning, /\/definitely\/not\/here\/chrome-headless-shell/);
+  assert.match(warning, /npx playwright@1\.63\.0 install chromium/);
+  assert.equal(warning.includes("\n"), false);
+  // ...and the positive half: a binary that exists is silent, with neither the
+  // bundled build nor the channel present — it is the one thing that will run.
+  const present = await preflight({
+    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_EXECUTABLE: process.execPath, DEMOMOTION_BROWSER_CHANNEL: "chrome" },
+    bundledExecutable: "/definitely/not/here",
+    channelCandidates: () => ["/definitely/not/here/Chrome"]
+  });
+  assert.equal(present.browser, "executable");
+  assert.equal(present.warnings.filter((w) => /Chromium|channel|browser/i.test(w)).length, 0, JSON.stringify(present.warnings));
+});
+
 test("a channel Playwright ships only on OTHER platforms is reported missing, by name", async () => {
   // pack.test.ts asks for "msedge-canary" as a channel that cannot exist. On
   // macOS and Windows the table knows where it would live, finds nothing and
@@ -138,7 +163,14 @@ test("session_stop fails by name when ffmpeg is not on PATH", { timeout: 60_000 
       `session did not land under DEMOMOTION_HOME: ${session.dir}`);
     // Paint something so the screencast produces frames: the failure must be the encoder's.
     await session.page.setContent("<h1 style=\"font-size:80px\">frames</h1>");
-    await new Promise((r) => setTimeout(r, 700));
+    // Seed first: prove the screencast is LIVE before stopping. Under load a
+    // fixed sleep can elapse with zero frames, and then the "no frames" path
+    // would pre-empt the assertion below — making it fail for the wrong reason.
+    for (let i = 0; i < 100 && (session.capture?.frameCount ?? 0) === 0; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok((session.capture?.frameCount ?? 0) > 0,
+      "seed: the screencast produced no frame in 10 s — the ffmpeg assertion below would be vacuous");
     process.env.PATH = "/definitely/not/here";
     await assert.rejects(stopSession(session.id), (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);

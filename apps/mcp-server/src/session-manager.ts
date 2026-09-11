@@ -61,7 +61,18 @@ export interface Session {
   /** The most recent `BLOCKED_REQUESTS_KEPT` blocks; `blockedCount` is the true total. */
   blockedRequests: BlockedRequest[];
   blockedCount: number;
+  /**
+   * Chromium's id for the page's main frame — stable for the life of the tab,
+   * across navigations. `goto` uses it to tell a block of ITS navigation apart
+   * from one inside an iframe or a popup.
+   */
+  mainFrameId?: string;
+  /** Called with every block as it is recorded; `goto` listens while it waits. */
+  blockListeners: Set<BlockListener>;
 }
+
+/** `documentFrameId`: set only when the blocked request was a frame's DOCUMENT load — the frame it would have navigated. */
+type BlockListener = (record: BlockedRequest, documentFrameId: string | undefined) => void;
 
 const sessions = new Map<string, Session>();
 
@@ -99,12 +110,25 @@ function nowSourceMs(s: Session): number {
  * By default Playwright's bundled Chromium is used so CI stays deterministic.
  * Setting DEMOMOTION_BROWSER_CHANNEL (e.g. "chrome" or "msedge") makes Playwright
  * drive a locally installed browser instead — useful on hosts where the bundled
- * Chromium build is unavailable.
+ * Chromium build is unavailable. DEMOMOTION_BROWSER_EXECUTABLE names one
+ * specific binary and wins over both: it is how the suite is run against the
+ * `chrome-headless-shell` CI drives, on a host where it is not a channel.
  */
 async function launchBrowser(headless: boolean, args: string[]): Promise<Browser> {
   const channel = process.env.DEMOMOTION_BROWSER_CHANNEL?.trim() || undefined;
+  const executablePath = process.env.DEMOMOTION_BROWSER_EXECUTABLE?.trim() || undefined;
   try {
-    return await chromium.launch(channel ? { headless, channel, args } : { headless, args });
+    return await chromium.launch({
+      headless,
+      args,
+      ...(channel ? { channel } : {}),
+      // A specific binary wins over a channel: it exists so the suite can be
+      // pointed at a Chromium build that is not installed as a channel (the
+      // headless-shell that CI's Playwright downloads, say) on a host where the
+      // bundled build cannot run. Playwright itself gives executablePath
+      // precedence over channel.
+      ...(executablePath ? { executablePath } : {})
+    });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const hint = channel
@@ -164,7 +188,7 @@ async function launchBrowser(headless: boolean, args: string[]): Promise<Browser
 // covers service workers (also blocked outright) and anything else that bypasses
 // interception, at host granularity.
 
-function recordBlock(s: Session, decision: Extract<Decision, { allowed: false }>, kind: BlockedRequest["kind"]): BlockedRequest {
+function recordBlock(s: Session, decision: Extract<Decision, { allowed: false }>, kind: BlockedRequest["kind"], documentFrameId?: string): BlockedRequest {
   const record: BlockedRequest = {
     seq: ++s.blockedCount,
     url: decision.url,
@@ -177,6 +201,7 @@ function recordBlock(s: Session, decision: Extract<Decision, { allowed: false }>
   };
   s.blockedRequests.push(record);
   if (s.blockedRequests.length > BLOCKED_REQUESTS_KEPT) s.blockedRequests.shift();
+  for (const listener of s.blockListeners) listener(record, documentFrameId);
   return record;
 }
 
@@ -246,13 +271,33 @@ async function installHttpGuard(s: Session) {
         return;
       }
       const isNavigation = event.resourceType === "Document";
-      recordBlock(s, decision, isHop ? "redirect" : isNavigation ? "navigation" : "subresource");
+      // A fetch() from the page carries the page's frameId too: only a
+      // Document request names the frame it would have navigated.
+      recordBlock(s, decision, isHop ? "redirect" : isNavigation ? "navigation" : "subresource", isNavigation ? event.frameId : undefined);
       await cdp.send("Fetch.failRequest", { requestId, errorReason: isNavigation ? "Aborted" : "BlockedByClient" });
     }).catch(() => {
       // Request already gone (target navigated or closed).
     });
   });
   await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
+}
+
+/**
+ * The CDP id of a page's main frame. Chromium keeps it for the life of the
+ * tab (it names the frame tree node, not one document), and a `Fetch` event
+ * on the browser session carries the same id — so a Document request paused
+ * with this `frameId` is the page's OWN navigation, not an iframe's or a
+ * popup's. Read through a throwaway session: `Page.getFrameTree` needs no
+ * `Page.enable`.
+ */
+async function mainFrameId(page: Page): Promise<string> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { frameTree } = await cdp.send("Page.getFrameTree");
+    return frameTree.frame.id;
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
 }
 
 export async function startSession(opts: {
@@ -313,8 +358,10 @@ export async function startSession(opts: {
     actions: [],
     policy,
     blockedRequests: [],
-    blockedCount: 0
+    blockedCount: 0,
+    blockListeners: new Set()
   };
+  session.mainFrameId = await mainFrameId(page);
 
   // Guards go in before the first navigation can happen — and before the
   // screencast, so nothing the capture does is ever outside the policy. The
@@ -361,9 +408,21 @@ export function captureTimeMs(id: string): number {
  * is recorded like any other block, so `session_status` shows it.
  *
  * When the navigation itself is stopped by the http guard (a 302 to a forbidden
- * host, say), Playwright rejects with a generic network error; that is
- * translated back into the recorded block's message, which names the host that
- * was refused and the variable to set.
+ * host, say), the navigation is over the moment the block is recorded — and
+ * this promise settles THEN, with the block's message (which names the host
+ * that was refused and the variable to set), by racing Playwright's navigation
+ * against the guard. It does not wait for Playwright to notice: how soon a
+ * Chromium build reports an aborted main-frame load back to Playwright's
+ * `goto` (and its `networkidle`) is that build's business, and a `goto` that
+ * can only settle when Playwright does is one that can sit on the navigation
+ * timeout — or past it, when the load never reports at all. Only a block of
+ * THIS page's own document load counts (`mainFrameId`): a refused fetch or
+ * XHR (even one answered with a redirect, which is labelled `redirect` too),
+ * an iframe or a popup stopped while the page loads are recorded, not thrown.
+ *
+ * Should Playwright reject first (the abort reached it before the guard's
+ * record, or the failure is unrelated), a block recorded during the call is
+ * still preferred over its generic network error.
  */
 export async function goto(id: string, url: string) {
   const s = getSession(id);
@@ -375,14 +434,26 @@ export async function goto(id: string, url: string) {
   const safeUrl = decision.url;
   const atMs = nowSourceMs(s);
   const blockedBefore = s.blockedCount;
+  let listener: BlockListener | undefined;
+  const stoppedByGuard = new Promise<never>((_, reject) => {
+    listener = (record, documentFrameId) => {
+      if (documentFrameId !== undefined && documentFrameId === s.mainFrameId) reject(new Error(record.message));
+    };
+    s.blockListeners.add(listener);
+  });
   try {
-    await s.page.goto(safeUrl, { waitUntil: "networkidle" });
+    const navigation = s.page.goto(safeUrl, { waitUntil: "networkidle" });
+    // Losing the race leaves this pending; whatever it settles to later is not news.
+    navigation.catch(() => {});
+    await Promise.race([navigation, stoppedByGuard]);
   } catch (error) {
     const blocked = s.blockedRequests.find(
       (b) => b.seq > blockedBefore && (b.kind === "navigation" || b.kind === "redirect")
     );
     if (blocked) throw new Error(blocked.message, { cause: error });
     throw error;
+  } finally {
+    if (listener) s.blockListeners.delete(listener);
   }
   s.actions.push({ id: crypto.randomUUID(), type: "goto", atMs, durationMs: nowSourceMs(s) - atMs, url: safeUrl });
 }

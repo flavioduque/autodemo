@@ -42,6 +42,7 @@ Environment:
   DEMOMOTION_HOME              Where sessions are written (<home>/sessions). Default: ~/.demomotion
   DEMOMOTION_ALLOWED_HOSTS     Hosts the recorded browser may reach. Default: localhost, 127.0.0.1, ::1
   DEMOMOTION_BROWSER_CHANNEL   Drive an installed browser (chrome, msedge) instead of the bundled Chromium
+  DEMOMOTION_BROWSER_EXECUTABLE  Path to a specific Chromium binary; wins over the channel and the bundled build
   HYPERFRAMES_BROWSER_PATH     Chrome for the renderer; without it HyperFrames downloads its own
 
 Needs ffmpeg and ffprobe on PATH, and a Chromium: either

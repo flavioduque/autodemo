@@ -168,6 +168,11 @@ export class ScreencastCapture {
    * most-recent screencast frame, normalized to the first frame = 0. This is the
    * time base events are stamped in — never `Date.now()`.
    */
+  /** Frames received so far — lets a caller prove the screencast is live before stopping. */
+  get frameCount(): number {
+    return this.frameCountIn;
+  }
+
   nowSourceMs(): number {
     if (this.t0Sec === undefined) return 0;
     return Math.round(this.lastRelSec * 1000);
@@ -178,6 +183,11 @@ export class ScreencastCapture {
     await this.cdp.send("Page.stopScreencast").catch(() => {});
     await Promise.allSettled(this.pendingWrites);
     await this.cdp.detach().catch(() => {});
+
+    // A missing encoder is a DEPENDENCY failure and must name itself before any
+    // runtime condition: under load the screencast may have produced no frame
+    // yet, and "no frames" would then mask the real, deterministic cause.
+    await assertEncoderToolsOnPath();
 
     if (this.frameCountIn === 0 || this.t0Sec === undefined) {
       throw new Error("Screencast produced no frames; capture cannot be assembled.");
@@ -225,6 +235,29 @@ export class ScreencastCapture {
  * names the tool and the fix. It fires at `session_stop`, the first moment the
  * encoder is needed; `demomotion mcp` also warns about it at startup.
  */
+/**
+ * Resolves `ffmpeg` and `ffprobe` on PATH the way `spawn` would, so the refusal
+ * is the same `toolMissingError` a failed spawn produces — only earlier and
+ * deterministic, before any frame-dependent check.
+ */
+export async function assertEncoderToolsOnPath(env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  const dirs = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  const exts = process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
+  for (const tool of ["ffmpeg", "ffprobe"] as const) {
+    let found = false;
+    for (const dir of dirs) {
+      for (const ext of exts) {
+        try { await fs.access(path.join(dir, tool + ext), fs.constants.X_OK); found = true; break; } catch { /* keep looking */ }
+      }
+      if (found) break;
+    }
+    if (!found) {
+      const enoent = Object.assign(new Error(`spawn ${tool} ENOENT`), { code: "ENOENT" });
+      throw toolMissingError(tool, enoent);
+    }
+  }
+}
+
 export function toolMissingError(tool: "ffmpeg" | "ffprobe", error: unknown): Error {
   if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
     return error instanceof Error ? error : new Error(String(error));

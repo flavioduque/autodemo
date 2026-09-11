@@ -18,3 +18,7 @@ data/test-media/
 
 # sessões criadas por testes rodados a partir do diretório do pacote
 apps/*/data/
+
+# Mídia do README é versionada de propósito (a vitrine do projeto)
+!docs/assets/demo.gif
+!docs/assets/demo.mp4

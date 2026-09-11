@@ -1,10 +1,23 @@
 import { z } from "zod";
+import { durationMs, sourceMs } from "./time.ts";
+
+export * from "./time.ts";
+
+/*
+ * THE ZOD BOUNDARY IS THE INGRESS. project.json is plain JSON; every field
+ * whose name ends in `Ms` is validated as a number and then BRANDED by the
+ * transform on its way out of `parse`. So `z.infer` (the type everything
+ * consumes) carries the brands, and `z.input` (what `parse` accepts, and the
+ * type of a `project_update` patch) stays a plain number — see `DemoProjectInput`.
+ * These transform calls are the only place a project's numbers become time.
+ */
 
 export const ActionSchema = z.object({
   id: z.string(),
   type: z.enum(["goto", "click", "fill", "wait", "screenshot", "scroll", "keypress"]),
-  atMs: z.number().nonnegative(),
-  durationMs: z.number().nonnegative().default(0),
+  /** When it happened, in the capture's time base. */
+  atMs: z.number().nonnegative().transform(sourceMs),
+  durationMs: z.number().nonnegative().default(0).transform(durationMs),
   label: z.string().optional(),
   selector: z.string().optional(),
   value: z.string().optional(),
@@ -17,8 +30,8 @@ export const ActionSchema = z.object({
 });
 
 export const ZoomSchema = z.object({
-  fromMs: z.number().nonnegative(),
-  toMs: z.number().positive(),
+  fromMs: z.number().nonnegative().transform(sourceMs),
+  toMs: z.number().positive().transform(sourceMs),
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
   scale: z.number().min(1).max(3).default(1.35)
@@ -34,15 +47,15 @@ export const ZoomSchema = z.object({
  * structure, so a cut that has no effect on the render is impossible to express.
  */
 export const EditSegmentSchema = z.object({
-  sourceFromMs: z.number().nonnegative(),
-  sourceToMs: z.number().positive(),
+  sourceFromMs: z.number().nonnegative().transform(sourceMs),
+  sourceToMs: z.number().positive().transform(sourceMs),
   /** 1 = normal, 2.5 = fast, 0.5 = slow motion. Never 0 or negative. */
   speed: z.number().positive().default(1)
 }).refine((v) => v.sourceToMs > v.sourceFromMs, "sourceToMs must be greater than sourceFromMs");
 
 export const CalloutSchema = z.object({
-  fromMs: z.number().nonnegative(),
-  toMs: z.number().positive(),
+  fromMs: z.number().nonnegative().transform(sourceMs),
+  toMs: z.number().positive().transform(sourceMs),
   text: z.string().min(1),
   x: z.number().min(0).max(1).default(0.5),
   y: z.number().min(0).max(1).default(0.85)
@@ -60,14 +73,14 @@ export const CalloutSchema = z.object({
  */
 export const CaptionWordSchema = z.object({
   text: z.string().min(1),
-  fromMs: z.number().nonnegative(),
-  toMs: z.number().positive()
+  fromMs: z.number().nonnegative().transform(sourceMs),
+  toMs: z.number().positive().transform(sourceMs)
 }).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
 
 /** A line of narration anchored in sourceMs, like zooms and callouts. */
 export const CaptionSchema = z.object({
-  fromMs: z.number().nonnegative(),
-  toMs: z.number().positive(),
+  fromMs: z.number().nonnegative().transform(sourceMs),
+  toMs: z.number().positive().transform(sourceMs),
   text: z.string().min(1),
   words: z.array(CaptionWordSchema).default([])
 }).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
@@ -103,7 +116,8 @@ export const DemoProjectSchema = z.object({
   /** The RENDERED frame. Absent = the recorded frame. */
   output: OutputFrameSchema.optional(),
   fps: z.number().positive().default(30),
-  durationMs: z.number().positive(),
+  /** The capture's length. Its exclusive end in source time is `captureEnd(durationMs)`. */
+  durationMs: z.number().positive().transform(durationMs),
   style: z.object({
     background: z.string().default("#0b1020"),
     padding: z.number().min(0).max(300).default(56),
@@ -128,11 +142,11 @@ export const DemoProjectSchema = z.object({
      * needed. A dissolve has to BORROW material from the other side of the cut,
      * so it is clamped by whatever handle exists.
      */
-    cutTransitionMs: z.number().min(0).max(2000).default(180),
+    cutTransitionMs: z.number().min(0).max(2000).default(180).transform(durationMs),
     /** Fade up from the background at the start of the video. */
-    openingFadeMs: z.number().min(0).max(5000).default(320),
+    openingFadeMs: z.number().min(0).max(5000).default(320).transform(durationMs),
     /** Fade down to the background at the end of the video. */
-    endingFadeMs: z.number().min(0).max(5000).default(420)
+    endingFadeMs: z.number().min(0).max(5000).default(420).transform(durationMs)
   }),
   actions: z.array(ActionSchema),
   zooms: z.array(ZoomSchema).default([]),
@@ -148,6 +162,12 @@ export const DemoProjectSchema = z.object({
 });
 
 export type DemoProject = z.infer<typeof DemoProjectSchema>;
+/**
+ * What `DemoProjectSchema.parse` ACCEPTS: plain numbers, defaults optional. This
+ * is the shape of project.json on disk and of a `project_update` patch — the
+ * un-branded side of the boundary.
+ */
+export type DemoProjectInput = z.input<typeof DemoProjectSchema>;
 export type DemoAction = z.infer<typeof ActionSchema>;
 export type DemoZoom = z.infer<typeof ZoomSchema>;
 export type DemoEditSegment = z.infer<typeof EditSegmentSchema>;

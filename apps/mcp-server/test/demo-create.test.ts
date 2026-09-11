@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { demoCreateInput, planSteps, runDemoCreate, type DemoCreateDeps } from "../src/demo-create.ts";
 import { PACING_PRESETS } from "../src/pacing.ts";
+import { sourceMs } from "@demomotion/schema";
 
 // demo_create is an ORCHESTRATION of tools that are each proven elsewhere. What
 // is new, and what these tests pin, is (a) the shape it accepts, (b) how a
@@ -138,7 +139,7 @@ function fakeDeps(overrides: Partial<DemoCreateDeps> & { urlAfterClick?: string 
     wait: async (id, ms) => { calls.push(["wait", id, ms]); },
     scroll: async (id, dy, dx) => { calls.push(["scroll", id, dy, dx]); },
     keypress: async (id, key) => { calls.push(["keypress", id, key]); },
-    status: (id) => ({ url, blockedRequests: [{ seq: 1, url: "http://evil/", host: "evil", port: 80, kind: "subresource", reason: "not-listed", message: "refused", atMs: 10 }] }),
+    status: (id) => ({ url, blockedRequests: [{ seq: 1, url: "http://evil/", host: "evil", port: 80, kind: "subresource", reason: "not-listed", message: "refused", atMs: sourceMs(10) }] }),
     stopSession: async (id) => { calls.push(["stopSession", id]); return { manifestPath: `/tmp/${id}/capture.json`, durationMs: 12_345, blockedRequests: [] }; },
     destroySession: async (id) => { calls.push(["destroySession", id]); },
     buildProject: async (manifest, title, options) => { calls.push(["buildProject", manifest, title, options]); return { projectPath: "/tmp/sess-1/project.json" }; },

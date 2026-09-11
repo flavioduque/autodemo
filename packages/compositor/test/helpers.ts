@@ -1,8 +1,14 @@
-import type { DemoProject } from "@demomotion/schema";
+import type { DemoProject, DemoProjectInput } from "@demomotion/schema";
 import { DemoProjectSchema } from "@demomotion/schema";
 
-/** A minimal, valid project. Every field a test cares about is overridden explicitly. */
-export function project(overrides: Partial<DemoProject> = {}): DemoProject {
+/**
+ * A minimal, valid project. Every field a test cares about is overridden explicitly.
+ *
+ * Overrides are the schema's INPUT shape — plain numbers, defaults optional —
+ * because that is what `parse` accepts; the brands go on inside the parse,
+ * exactly as they do for project.json. A test never constructs a brand here.
+ */
+export function project(overrides: Partial<DemoProjectInput> = {}): DemoProject {
   return DemoProjectSchema.parse({
     version: 1,
     title: "T",

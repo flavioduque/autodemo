@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { generateComposition } from "../src/index.ts";
 import { project, stageStyle, camStyle, px, runtime, visibleSourceRect, rootAttr } from "./helpers.ts";
-import type { DemoAction } from "@demomotion/schema";
+import type { DemoProjectInput } from "@demomotion/schema";
 
 /**
  * A `social` cut is 9:16. The capture is 16:9. Before this existed, asking for a
@@ -13,8 +13,11 @@ import type { DemoAction } from "@demomotion/schema";
 const SOURCE = { width: 1920, height: 1080 };
 const VERTICAL = { width: 1080, height: 1920 };
 
-/** Three clicks spread across the frame, including one hard against the right edge. */
-const ACTIONS: DemoAction[] = [
+/**
+ * Three clicks spread across the frame, including one hard against the right
+ * edge. Typed as the schema's INPUT: plain numbers that `project()` parses.
+ */
+const ACTIONS: DemoProjectInput["actions"] = [
   { id: "a1", type: "click", atMs: 1000, durationMs: 0, x: 0.18, y: 0.30 },
   { id: "a2", type: "fill", atMs: 4000, durationMs: 0, x: 0.72, y: 0.55 },
   { id: "a3", type: "click", atMs: 8000, durationMs: 0, x: 0.97, y: 0.88 }

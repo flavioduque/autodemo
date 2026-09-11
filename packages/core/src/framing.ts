@@ -1,4 +1,4 @@
-import type { DemoAction } from "@demomotion/schema";
+import { type DemoAction, type SourceTimeMs, spanMs } from "@demomotion/schema";
 import { cursorTrack } from "./cursor.ts";
 
 /**
@@ -20,7 +20,7 @@ import { cursorTrack } from "./cursor.ts";
 export type CropRect = { x: number; y: number; width: number; height: number };
 
 /** Where the reframing camera is pointed at one instant of the capture. */
-export type FrameKeyframe = { sourceMs: number; x: number; y: number };
+export type FrameKeyframe = { sourceMs: SourceTimeMs; x: number; y: number };
 
 export type FrameSize = { width: number; height: number };
 
@@ -74,7 +74,7 @@ function smoothstep(u: number): number {
  * towards the middle of a frame nobody is looking at would only lose the product.
  * With no keyframes at all there is nothing to follow, so it sits in the centre.
  */
-export function framingCentreAt(track: FrameKeyframe[], sourceMs: number): { x: number; y: number } {
+export function framingCentreAt(track: FrameKeyframe[], sourceMs: SourceTimeMs): { x: number; y: number } {
   if (track.length === 0) return { x: 0.5, y: 0.5 };
   const first = track[0];
   if (sourceMs <= first.sourceMs) return { x: first.x, y: first.y };
@@ -88,7 +88,7 @@ export function framingCentreAt(track: FrameKeyframe[], sourceMs: number): { x: 
   }
   const prev = track[i];
   const next = track[i + 1];
-  const p = smoothstep((sourceMs - prev.sourceMs) / (next.sourceMs - prev.sourceMs));
+  const p = smoothstep(spanMs(sourceMs, prev.sourceMs) / spanMs(next.sourceMs, prev.sourceMs));
   return { x: prev.x + (next.x - prev.x) * p, y: prev.y + (next.y - prev.y) * p };
 }
 
@@ -108,7 +108,7 @@ function clamp(value: number, min: number, max: number): number {
 export function framingRectAt(
   track: FrameKeyframe[],
   size: { source: FrameSize; output: FrameSize },
-  sourceMs: number
+  sourceMs: SourceTimeMs
 ): CropRect {
   const crop = referenceCrop(size.source, size.output);
   const centre = framingCentreAt(track, sourceMs);

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCaptionSkeleton, distributeWords, MIN_WORD_MS } from "../src/captions.ts";
+import { sourceMs, durationMs, ZERO_MS } from "@demomotion/schema";
 
 /**
  * Expected values are computed BY HAND from the rule, never by calling the code:
@@ -20,7 +21,7 @@ import { buildCaptionSkeleton, distributeWords, MIN_WORD_MS } from "../src/capti
 test("distributeWords splits a window proportionally to token length", () => {
   assert.equal(MIN_WORD_MS, 90, "the hand-computed table above assumes a 90 ms floor");
 
-  const words = distributeWords("Open the settings panel", 0, 4000);
+  const words = distributeWords("Open the settings panel", sourceMs(0), sourceMs(4000));
 
   assert.deepEqual(words, [
     { text: "Open", fromMs: 0, toMs: 818 },
@@ -32,7 +33,7 @@ test("distributeWords splits a window proportionally to token length", () => {
 
 test("the last word ends exactly at toMs, on a window that does not start at zero", () => {
   // Same sentence, shifted by 12 345 ms and 3 s long: the shift is pure addition.
-  const words = distributeWords("Open the settings panel", 12_345, 15_345);
+  const words = distributeWords("Open the settings panel", sourceMs(12_345), sourceMs(15_345));
   assert.equal(words[0].fromMs, 12_345);
   assert.equal(words.at(-1)!.toMs, 15_345, "the caption must not outlive its own window");
 
@@ -41,29 +42,29 @@ test("the last word ends exactly at toMs, on a window that does not start at zer
 });
 
 test("a single word spans the whole window", () => {
-  assert.deepEqual(distributeWords("Save", 1000, 2500), [{ text: "Save", fromMs: 1000, toMs: 2500 }]);
+  assert.deepEqual(distributeWords("Save", sourceMs(1000), sourceMs(2500)), [{ text: "Save", fromMs: 1000, toMs: 2500 }]);
 });
 
 test("a window too short for the floor is still divided, never inverted", () => {
   // 3 words over 120 ms: minMs = min(90, 40) = 40, slack = 0, so each word gets
   // exactly 40 ms regardless of its length. Hand-computed: 1000 | 1040 | 1080 | 1120.
-  const words = distributeWords("a bb ccc", 1000, 1120);
+  const words = distributeWords("a bb ccc", sourceMs(1000), sourceMs(1120));
   assert.deepEqual(words.map((w) => w.fromMs), [1000, 1040, 1080]);
   assert.deepEqual(words.map((w) => w.toMs), [1040, 1080, 1120]);
   for (const w of words) assert.ok(w.toMs > w.fromMs, "no word may have zero or negative duration");
 });
 
 test("degenerate input yields no words instead of a broken track", () => {
-  assert.deepEqual(distributeWords("   ", 0, 1000), []);
-  assert.deepEqual(distributeWords("hello", 1000, 1000), []);
-  assert.deepEqual(distributeWords("hello", 2000, 1000), []);
+  assert.deepEqual(distributeWords("   ", sourceMs(0), sourceMs(1000)), []);
+  assert.deepEqual(distributeWords("hello", sourceMs(1000), sourceMs(1000)), []);
+  assert.deepEqual(distributeWords("hello", sourceMs(2000), sourceMs(1000)), []);
 });
 
 test("distributeWords is a pure function of its arguments", () => {
   // Same input, two calls: identical output. A render worker that visits this
   // caption at a different wall-clock instant must get the same timings.
-  const a = distributeWords("Deterministic by construction", 500, 4500);
-  const b = distributeWords("Deterministic by construction", 500, 4500);
+  const a = distributeWords("Deterministic by construction", sourceMs(500), sourceMs(4500));
+  const b = distributeWords("Deterministic by construction", sourceMs(500), sourceMs(4500));
   assert.deepEqual(a, b);
 });
 
@@ -72,13 +73,13 @@ test("a caption skeleton never overlaps itself, even when labels come 500 ms apa
   // three fills land 529 and 396 ms apart. Two captions on screen at once is
   // not a caption track, it is a stack.
   const actions = [
-    { id: "a", type: "click" as const, atMs: 2278, durationMs: 0, label: "New client" },
-    { id: "b", type: "fill" as const, atMs: 6534, durationMs: 0, label: "Name" },
-    { id: "c", type: "fill" as const, atMs: 7063, durationMs: 0, label: "Email" },
-    { id: "d", type: "fill" as const, atMs: 7459, durationMs: 0, label: "Phone" },
-    { id: "e", type: "click" as const, atMs: 7994, durationMs: 0, label: "Save client" }
+    { id: "a", type: "click" as const, atMs: sourceMs(2278), durationMs: ZERO_MS, label: "New client" },
+    { id: "b", type: "fill" as const, atMs: sourceMs(6534), durationMs: ZERO_MS, label: "Name" },
+    { id: "c", type: "fill" as const, atMs: sourceMs(7063), durationMs: ZERO_MS, label: "Email" },
+    { id: "d", type: "fill" as const, atMs: sourceMs(7459), durationMs: ZERO_MS, label: "Phone" },
+    { id: "e", type: "click" as const, atMs: sourceMs(7994), durationMs: ZERO_MS, label: "Save client" }
   ];
-  const captions = buildCaptionSkeleton(actions, 10315);
+  const captions = buildCaptionSkeleton(actions, durationMs(10315));
 
   // Half one (seed): the skeleton really produced the five lines.
   assert.deepEqual(captions.map((c) => c.text), ["New client", "Name", "Email", "Phone", "Save client"]);
@@ -101,24 +102,24 @@ test("the skeleton's hold is a parameter: a pacing preset can shorten or lengthe
   // One labelled action with nothing after it for 10 s: the line's length is
   // the hold alone. The numbers are the social and tutorial presets' caption
   // holds from SKILL.md section 2, typed here by hand.
-  const actions = [{ id: "a", type: "click" as const, atMs: 1000, durationMs: 0, label: "Create workspace" }];
+  const actions = [{ id: "a", type: "click" as const, atMs: sourceMs(1000), durationMs: ZERO_MS, label: "Create workspace" }];
 
   // Positive half: the default is untouched — 2200 ms, as every existing
   // project_build was seeded.
-  assert.equal(buildCaptionSkeleton(actions, 20_000)[0].toMs, 3200);
+  assert.equal(buildCaptionSkeleton(actions, durationMs(20_000))[0].toMs, 3200);
   // A shorter hold really shortens the line, and the words follow it.
-  const social = buildCaptionSkeleton(actions, 20_000, 1600);
+  const social = buildCaptionSkeleton(actions, durationMs(20_000), durationMs(1600));
   assert.equal(social[0].toMs, 2600);
   assert.equal(social[0].words.at(-1)!.toMs, 2600);
   // A longer one lengthens it.
-  assert.equal(buildCaptionSkeleton(actions, 20_000, 3000)[0].toMs, 4000);
+  assert.equal(buildCaptionSkeleton(actions, durationMs(20_000), durationMs(3000))[0].toMs, 4000);
 
   // Negative half: the hold never lets a line run into the next labelled action
   // or past the capture, whatever the preset asks for.
   const two = [
     ...actions,
-    { id: "b", type: "click" as const, atMs: 1500, durationMs: 0, label: "Done" }
+    { id: "b", type: "click" as const, atMs: sourceMs(1500), durationMs: ZERO_MS, label: "Done" }
   ];
-  assert.equal(buildCaptionSkeleton(two, 20_000, 3000)[0].toMs, 1500);
-  assert.equal(buildCaptionSkeleton(actions, 2000, 3000)[0].toMs, 2000);
+  assert.equal(buildCaptionSkeleton(two, durationMs(20_000), durationMs(3000))[0].toMs, 1500);
+  assert.equal(buildCaptionSkeleton(actions, durationMs(2000), durationMs(3000))[0].toMs, 2000);
 });

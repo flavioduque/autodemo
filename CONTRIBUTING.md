@@ -4,7 +4,7 @@ Requirements: Node.js 22+, pnpm 10.
 
 ```bash
 pnpm install
-pnpm --filter @demomotion/mcp-server exec playwright install chromium
+pnpm --filter demomotion exec playwright install chromium
 pnpm typecheck
 pnpm test
 pnpm build
@@ -24,14 +24,14 @@ Everything heavier is behind its own gate:
 
 ```bash
 # render-level tests (compositor pixels). Needs a browser AND ffmpeg.
-DEMOMOTION_RENDER_TESTS=1 pnpm --filter @demomotion/mcp-server test
+DEMOMOTION_RENDER_TESTS=1 pnpm --filter demomotion test
 
 # capture time-base alignment
-DEMOMOTION_SLOW=1 pnpm --filter @demomotion/mcp-server test
+DEMOMOTION_SLOW=1 pnpm --filter demomotion test
 
 # the MCP protocol end-to-end test: spawns the server and speaks JSON-RPC over
 # stdio, driving capture -> build -> edit -> render, twice (~4 min)
-DEMOMOTION_E2E_TESTS=1 pnpm --filter @demomotion/mcp-server test
+DEMOMOTION_E2E_TESTS=1 pnpm --filter demomotion test
 ```
 
 Add `DEMOMOTION_BROWSER_CHANNEL=chrome` on a host without bundled Chromium, and

@@ -24,7 +24,7 @@ jobs:
       # typing.test.ts) e NÃO usa ffmpeg: tudo que precisaria dele está atrás de
       # uma variável de ambiente, e o único teste padrão que chama session_stop
       # roda no modo record-video justamente por isso.
-      - run: pnpm --filter @demomotion/mcp-server exec playwright install --with-deps chromium
+      - run: pnpm --filter demomotion exec playwright install --with-deps chromium
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
@@ -53,7 +53,7 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: pnpm install --frozen-lockfile=false
-      - run: pnpm --filter @demomotion/mcp-server exec playwright install --with-deps chromium
+      - run: pnpm --filter demomotion exec playwright install --with-deps chromium
       # O HyperFrames renderiza com puppeteer-core e baixaria o próprio Chrome.
       # A imagem já tem um; apontar para ele evita 150 MB de download por run.
       # Se não houver, falha aqui dizendo isso — em vez de travar no download.
@@ -65,4 +65,25 @@ jobs:
             exit 1
           fi
           echo "HYPERFRAMES_BROWSER_PATH=$chrome" >> "$GITHUB_ENV"
-      - run: pnpm --filter @demomotion/mcp-server test
+      - run: pnpm --filter demomotion test
+
+  # O que um usuário de `npx demomotion` recebe: empacota (npm pack), instala o
+  # tarball num diretório limpo e fala MCP com o bin instalado. Não precisa de
+  # browser nem de ffmpeg — só do registro npm, para baixar a árvore de
+  # dependências do pacote publicado exatamente como o usuário baixaria.
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEMOMOTION_PACK_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter demomotion test:pack

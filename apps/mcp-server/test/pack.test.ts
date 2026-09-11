@@ -34,7 +34,7 @@ const EXPECTED_TOOLS = [
   "session_start", "browser_inspect", "browser_scroll", "browser_keypress",
   "browser_goto", "browser_click", "browser_fill", "browser_wait",
   "browser_screenshot", "session_status", "session_stop",
-  "project_build", "project_update", "demo_finalize", "render_video"
+  "project_build", "project_update", "demo_finalize", "render_video", "demo_create"
 ];
 
 /** npm on Windows is npm.cmd; spawning it needs a shell. */
@@ -121,7 +121,7 @@ test("the packed tarball installs in a fresh directory and speaks MCP over stdio
       const listed = await client.request("tools/list", {});
       const names = (listed.tools as Array<{ name: string }>).map((tool) => tool.name).sort();
       assert.deepEqual(names, [...EXPECTED_TOOLS].sort());
-      assert.equal(names.length, 15);
+      assert.equal(names.length, 16);
       // The startup line names where sessions go — the absolute directory the
       // MCP results will point into — on stderr, never stdout.
       await new Promise((r) => setTimeout(r, 300));

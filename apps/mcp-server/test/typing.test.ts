@@ -132,9 +132,13 @@ test("a fill with a type delay is typed key by key, and the timeline records the
   const instant = session.actions.at(-1)!;
   assert.equal(instant.type, "fill");
   assert.equal(await page.locator(NAME_INPUT).inputValue(), VALUE, "the instant fill did not land the value");
+  // Zero keystrokes is the by-construction proof that this path sets the value
+  // instead of typing it — host-independent, unlike a wall-clock bound. The
+  // timing dimension is covered below by comparing the two fills MEASURED IN
+  // THE SAME RUN, so load affects both sides equally. An absolute bound here
+  // used to fail inside the full suite while passing in isolation: it measured
+  // the machine, not the feature.
   assert.deepEqual(instantKeys, [], "an undelayed fill is supposed to set the value, not type it");
-  assert.ok(instant.durationMs < EXPECTED_TYPING_MS * 0.25,
-    `an undelayed fill took ${instant.durationMs} ms — it is no longer instant`);
 
   // --- THE FEATURE: same field, same string, typed -------------------------
   // Same field on purpose: the pre-existing value from the control is exactly

@@ -1,10 +1,12 @@
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Frame, type Locator, type Page } from "playwright";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import type { DemoAction } from "@demomotion/schema";
 import { ScreencastCapture } from "./capture-adapter.js";
 import { NetworkPolicy, type Decision, type LookupFn } from "./network-policy.js";
+import { PLAYWRIGHT_VERSION } from "./versions.js";
 
 /**
  * Capture mode.
@@ -64,6 +66,21 @@ export interface Session {
 const sessions = new Map<string, Session>();
 
 /**
+ * Where sessions are written: `$DEMOMOTION_HOME/sessions`, or
+ * `~/.demomotion/sessions` when the variable is unset.
+ *
+ * Not the cwd. An MCP client launches this server from wherever it likes —
+ * Claude Desktop from `/`, an IDE from the user's project — so a cwd-relative
+ * `data/sessions` is either unwritable or litters someone's repository with
+ * MP4s. A fixed per-user directory is always writable and always the same
+ * place, and every tool result carries the absolute path anyway.
+ */
+export function sessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const home = env.DEMOMOTION_HOME?.trim();
+  return home ? path.resolve(home, "sessions") : path.join(os.homedir(), ".demomotion", "sessions");
+}
+
+/**
  * Current time on the session's capture time base, in ms.
  *
  * In screencast mode this is the timestamp of the most-recent screencast frame
@@ -92,7 +109,7 @@ async function launchBrowser(headless: boolean, args: string[]): Promise<Browser
     const detail = error instanceof Error ? error.message : String(error);
     const hint = channel
       ? `Browser channel "${channel}" could not be launched; install that browser or unset DEMOMOTION_BROWSER_CHANNEL to fall back to the bundled Chromium.`
-      : `Failed to launch Playwright's bundled Chromium; if it is missing or unsupported on this host, set DEMOMOTION_BROWSER_CHANNEL=chrome to drive the locally installed Google Chrome instead.`;
+      : `Failed to launch Playwright's bundled Chromium; if it is missing or unsupported on this host, run "npx playwright@${PLAYWRIGHT_VERSION} install chromium" or set DEMOMOTION_BROWSER_CHANNEL=chrome to drive the locally installed Google Chrome instead.`;
     throw new Error(`${hint}\n\nOriginal launch error: ${detail}`, { cause: error });
   }
 }
@@ -252,7 +269,7 @@ export async function startSession(opts: {
   network?: { allowedHosts?: string; lookup?: LookupFn };
 }) {
   const id = crypto.randomUUID();
-  const dir = path.resolve("data/sessions", id);
+  const dir = path.join(sessionsRoot(), id);
   await fs.mkdir(dir, { recursive: true });
 
   const mode = captureMode();
@@ -659,6 +676,23 @@ export async function stopSession(id: string) {
   sessions.delete(id);
 
   return { ...manifest, manifestPath };
+}
+
+/**
+ * Tears a session down WITHOUT producing a capture: the browser is closed and
+ * the id forgotten. This is the fallback `demo_create` reaches for when a
+ * failed run cannot even be stopped normally (`stopSession` threw half-way,
+ * say, with the browser still up) — a leaked Chrome is the one outcome that is
+ * never acceptable. Closing a browser that is already gone is not an error.
+ */
+export async function destroySession(id: string) {
+  const s = getSession(id);
+  sessions.delete(id);
+  // Not `capture.stop()`: that assembles the video with ffmpeg, which is what a
+  // failed `stopSession` may just have choked on. Closing the browser ends the
+  // screencast's CDP session with it.
+  try { await s.context.close(); } catch { /* already closed */ }
+  try { await s.browser.close(); } catch { /* already closed */ }
 }
 
 export function status(id: string) {

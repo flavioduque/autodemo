@@ -3,7 +3,16 @@ import path from "node:path";
 import { DemoProjectSchema, type DemoProject } from "@demomotion/schema";
 import { buildAutoZooms, buildCaptionSkeleton } from "@demomotion/core";
 
-export async function buildProject(captureManifestPath: string, title: string): Promise<{project: DemoProject; projectPath: string}> {
+export type BuildProjectOptions = {
+  /**
+   * How long a skeleton caption stays up when nothing follows it. A pacing
+   * preset names its own (SKILL.md section 2); `project_build` leaves it at the
+   * core default.
+   */
+  captionHoldMs?: number;
+};
+
+export async function buildProject(captureManifestPath: string, title: string, options: BuildProjectOptions = {}): Promise<{project: DemoProject; projectPath: string}> {
   const raw = JSON.parse(await fs.readFile(captureManifestPath, "utf8"));
   if (!raw.videoPath) throw new Error("Capture manifest has no videoPath");
   if (!Array.isArray(raw.actions)) throw new Error("Capture manifest has no actions array");
@@ -30,7 +39,7 @@ export async function buildProject(captureManifestPath: string, title: string): 
     // a line already timed and split per word, so the agent only has to rewrite
     // the prose (project_update) instead of timing it. A capture with no labels
     // produces no captions.
-    captions: buildCaptionSkeleton(raw.actions, raw.durationMs)
+    captions: buildCaptionSkeleton(raw.actions, raw.durationMs, options.captionHoldMs)
   });
 
   const projectPath = path.join(path.dirname(captureManifestPath), "project.json");

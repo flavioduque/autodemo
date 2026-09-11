@@ -207,8 +207,8 @@ function recordBlock(s: Session, decision: Extract<Decision, { allowed: false }>
 }
 
 /**
- * The WebSocket layer (point 3 above). Neither the route nor the Fetch domain
- * intercepts a WebSocket handshake; Playwright's `routeWebSocket` does.
+ * The WebSocket layer (point 2 above). The Fetch domain does not intercept a
+ * WebSocket handshake; Playwright's `routeWebSocket` does.
  */
 async function installWebSocketGuard(s: Session) {
   await s.context.routeWebSocket("**/*", async (ws) => {
@@ -313,6 +313,20 @@ export async function startSession(opts: {
    * Tests inject both so they never touch the network.
    */
   network?: { allowedHosts?: string; lookup?: LookupFn };
+  /**
+   * Extra Chromium launch flags, appended AFTER the policy's own
+   * (`--host-resolver-rules`). A test seam, not a product knob: nothing in the
+   * product passes it, so the shipped launch flags are exactly the policy's.
+   *
+   * It exists for one reason. The OOPIF scenarios in `network-route.test.ts`
+   * are only meaningful if the cross-site <iframe> really lands in a separate
+   * TARGET — that is the path the browser-target `Fetch` guard exists to cover.
+   * Full Chrome isolates by default; Playwright's bundled
+   * `chromium_headless_shell` (what CI drives) does NOT, so those tests would
+   * silently exercise the same-process path. They pass `--site-per-process` so
+   * the precondition they assert can actually hold on either binary.
+   */
+  browserArgs?: string[];
 }) {
   const id = crypto.randomUUID();
   const dir = path.join(sessionsRoot(), id);
@@ -331,7 +345,7 @@ export async function startSession(opts: {
   });
   await policy.prepare();
 
-  const browser = await launchBrowser(opts.headless, policy.chromiumArgs());
+  const browser = await launchBrowser(opts.headless, [...policy.chromiumArgs(), ...(opts.browserArgs ?? [])]);
   const context = await browser.newContext({
     viewport: { width: opts.width, height: opts.height },
     deviceScaleFactor,

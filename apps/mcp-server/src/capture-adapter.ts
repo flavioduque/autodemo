@@ -239,8 +239,7 @@ export class ScreencastCapture {
  * Turns the `spawn ffmpeg ENOENT` a missing binary produces into a refusal that
  * names the tool and the fix. It fires at `session_stop`, the first moment the
  * encoder is needed; `demomotion mcp` also warns about it at startup.
- */
-/**
+ *
  * Resolves `ffmpeg` and `ffprobe` on PATH the way `spawn` would, so the refusal
  * is the same `toolMissingError` a failed spawn produces — only earlier and
  * deterministic, before any frame-dependent check.

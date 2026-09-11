@@ -111,11 +111,27 @@ The first run downloads the package and its renderer (~400 MB, dominated by Hype
 
 Sessions, captures and renders are written under `~/.demomotion/sessions/` (override with `DEMOMOTION_HOME`); every tool result returns the absolute path. `demomotion render project.json --out demo.mp4` re-renders an edited project from the shell.
 
+The whole pipeline is one call:
+
+```json
+{ "tool": "demo_create", "arguments": {
+  "url": "http://localhost:3000/signup", "title": "Signup", "pacing": "product-demo",
+  "steps": [
+    { "action": "fill",  "selector": "[data-testid=\"name\"]",   "value": "Inês Corvelo",   "label": "Your name opens the workspace" },
+    { "action": "fill",  "selector": "[data-testid=\"email\"]",  "value": "ines@studio.com", "label": "One e-mail, no verification step" },
+    { "action": "click", "selector": "[data-testid=\"submit\"]", "label": "The workspace is ready" },
+    { "action": "wait",  "ms": 1200 }
+  ] } }
+→ { "video": "…/final.mp4", "project": "…/project.json", "capture": "…/capture.json", "durationMs": 9800, … }
+```
+
+Pass `"pacing": "social"` and the same steps come out 1080×1920. A step that fails returns `isError` with the step index, selector and cause, the capture recorded so far, and no browser left running.
+
 Contributors: `pnpm install && pnpm --filter demomotion exec playwright install chromium && pnpm typecheck && pnpm test && pnpm build`; `pnpm dev:mcp` runs the server from source.
 
 ## The MCP tool surface
 
-The agent sees granular, auditable tools — not a black box — so any run can be debugged, retried or partially re-rendered.
+The agent sees granular, auditable tools — not a black box — and `demo_create` composes them into one call — so any run can be debugged, retried or partially re-rendered.
 
 | Tool | Purpose |
 |---|---|
@@ -128,6 +144,7 @@ The agent sees granular, auditable tools — not a black box — so any run can 
 | `project_build` | Compile a capture into an editable project + auto-zoom regions |
 | `project_update` | Edit style, zooms, the edit list (cuts + speed ramps) and callouts — no re-recording |
 | `render_video` | Render the final H.264 MP4 |
+| `demo_create` | **One call → MP4**: URL + explicit step list + pacing preset; runs the whole pipeline, fails with the step named and the capture kept |
 | `demo_finalize` | Stop → compile → render in one call |
 
 An agent skill in [`skills/demomotion/SKILL.md`](./skills/demomotion/SKILL.md) tells the model *how* to use them: objective analysis, scene planning, capture, editing heuristics, render, validation.

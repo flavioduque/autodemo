@@ -5,38 +5,15 @@ import {
 } from "./session-manager.js";
 import { buildProject, updateProject } from "./project.js";
 import { renderVideo } from "./render.js";
+import { demoCreateInput, runDemoCreate } from "./demo-create.js";
+import { PACING_PRESETS } from "./pacing.js";
+import { captionInput, editSegmentInput, outputFrameInput } from "./tool-inputs.js";
 import fs from "node:fs/promises";
 import { VERSION } from "./versions.js";
 
 const result = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }]
 });
-
-/**
- * One kept slice of the capture, played at its own speed (spec section 3).
- * Cuts are implicit: source material inside no segment was cut. This mirrors
- * EditSegmentSchema in @demomotion/schema, restated here because the MCP surface
- * is built with its own zod instance.
- */
-const editSegmentInput = z.object({
-  sourceFromMs: z.number().nonnegative(),
-  sourceToMs: z.number().positive(),
-  speed: z.number().positive().default(1)
-}).refine((v) => v.sourceToMs > v.sourceFromMs, "sourceToMs must be greater than sourceFromMs");
-
-/** One word of narration, in the capture's time base. */
-const captionWordInput = z.object({
-  text: z.string().min(1),
-  fromMs: z.number().nonnegative(),
-  toMs: z.number().positive()
-}).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
-
-const captionInput = z.object({
-  fromMs: z.number().nonnegative(),
-  toMs: z.number().positive(),
-  text: z.string().min(1),
-  words: z.array(captionWordInput).default([])
-}).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
 
 /**
  * Milliseconds between keystrokes when nothing is asked for.
@@ -81,10 +58,7 @@ export const projectUpdateInput = z.object({
    * output's aspect ratio out of the source and walks it across the interactions.
    * Omit it to render at the capture's own frame.
    */
-  output: z.object({
-    width: z.number().int().min(640).max(3840),
-    height: z.number().int().min(480).max(3840)
-  }).optional(),
+  output: outputFrameInput.optional(),
   style: z.object({
     background: z.string().optional(), padding: z.number().min(0).max(300).optional(),
     radius: z.number().min(0).max(100).optional(), shadow: z.boolean().optional(),
@@ -235,6 +209,21 @@ export function createServer() {
     const rendered = await renderVideo(built.projectPath, outputPath);
     const stat = await fs.stat(rendered);
     return result({captureManifestPath:capture.manifestPath, projectPath:built.projectPath, outputPath:rendered, bytes:stat.size});
+  });
+
+  const social = PACING_PRESETS.social;
+  server.registerTool("demo_create", {
+    description:
+      "ONE CALL, ONE MP4. Give it the URL and an EXPLICIT step list (click / fill / scroll / keypress / wait / goto) and it runs the whole pipeline — session_start, the navigation, every step, session_stop, project_build, project_update, render_video — through the same code as the granular tools, and answers with absolute paths: { video, project, capture, durationMs, blockedRequests, sessionId, pacing }. It does NOT plan: you decide the steps (use browser_inspect on a granular session first if you need selectors). " +
+      "`pacing` (default product-demo; tutorial; social) supplies what a step does not say, with the numbers of the skill's section 2: typeDelayMs for fills (social types only the first field), the wait after a navigation (the opening one, every goto, and a click that changes the URL), the wait between fields, the hold on the final result, the caption hold and cutTransitionMs. A step that names its own typeDelayMs or is followed by your own wait keeps it. " +
+      `The social preset publishes VERTICAL by default (output ${social.output!.width}x${social.output!.height}, reframed from the capture); pass \`output\` to override any preset. ` +
+      "`captions: \"auto\"` (default) keeps the skeleton project_build seeds from the step labels — write labels as narration, then if the prose needs work rewrite it with project_update and re-render with render_video; or pass an explicit caption array. " +
+      "ON FAILURE (a selector not found, a navigation refused by the network policy, a timeout, a render error) the result is isError with a JSON body: `error` (one line naming the step), `stage` (open | step | stop | build | update | render), `step` { index, action, selector | url, label } (a fill's value is never echoed), `cause` (the underlying message — the policy's own when that is the reason), `sessionId`, `blockedRequests`, and `capture` (capture.json of what was recorded before the failure, whenever it could be assembled) plus `project` when the build had already happened. The session is ALWAYS stopped — a failed demo_create leaves no browser and no live session behind — so nothing partial is silently reported as success. Use the granular tools for debugging, retries and partial re-renders.",
+    inputSchema: demoCreateInput
+  }, async (input) => {
+    const outcome = await runDemoCreate(input);
+    if (outcome.ok) return result(outcome.value);
+    return { content: [{ type: "text" as const, text: JSON.stringify(outcome.failure, null, 2) }], isError: true };
   });
 
   server.registerTool("render_video", {

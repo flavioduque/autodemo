@@ -79,8 +79,12 @@ export const CAPTION_HOLD_MS = 2200;
  * happened and closes before the next labelled one — so the agent's remaining
  * job is to rewrite the prose, not to time it. A label is a UI phrase ("New
  * client"), not narration; that is exactly why this is a SKELETON.
+ *
+ * `holdMs` is how long a line stays up when nothing follows it: the pacing
+ * presets (SKILL.md section 2, `PACING_PRESETS` in the server) each name their
+ * own. Absent, it is `CAPTION_HOLD_MS`, so every existing caller is unchanged.
  */
-export function buildCaptionSkeleton(actions: DemoAction[], durationMs: number): Caption[] {
+export function buildCaptionSkeleton(actions: DemoAction[], durationMs: number, holdMs: number = CAPTION_HOLD_MS): Caption[] {
   const labelled = actions
     .filter((a) => typeof a.label === "string" && a.label.trim().length > 0)
     .sort((a, b) => a.atMs - b.atMs);
@@ -94,7 +98,7 @@ export function buildCaptionSkeleton(actions: DemoAction[], durationMs: number):
     // The ceiling is hard: a line that ran into the next one would put two
     // captions on screen at once, which is a stack, not a caption track. A
     // label whose successor arrives 400 ms later simply gets a 400 ms line.
-    const toMs = Math.min(fromMs + CAPTION_HOLD_MS, ceiling, durationMs);
+    const toMs = Math.min(fromMs + holdMs, ceiling, durationMs);
     if (toMs <= fromMs) continue;
     const text = action.label!.trim();
     captions.push({ fromMs, toMs, text, words: distributeWords(text, fromMs, toMs) });

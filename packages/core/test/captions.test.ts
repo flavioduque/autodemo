@@ -96,3 +96,29 @@ test("a caption skeleton never overlaps itself, even when labels come 500 ms apa
     assert.equal(c.words.at(-1)!.toMs, c.toMs);
   }
 });
+
+test("the skeleton's hold is a parameter: a pacing preset can shorten or lengthen every line", () => {
+  // One labelled action with nothing after it for 10 s: the line's length is
+  // the hold alone. The numbers are the social and tutorial presets' caption
+  // holds from SKILL.md section 2, typed here by hand.
+  const actions = [{ id: "a", type: "click" as const, atMs: 1000, durationMs: 0, label: "Create workspace" }];
+
+  // Positive half: the default is untouched — 2200 ms, as every existing
+  // project_build was seeded.
+  assert.equal(buildCaptionSkeleton(actions, 20_000)[0].toMs, 3200);
+  // A shorter hold really shortens the line, and the words follow it.
+  const social = buildCaptionSkeleton(actions, 20_000, 1600);
+  assert.equal(social[0].toMs, 2600);
+  assert.equal(social[0].words.at(-1)!.toMs, 2600);
+  // A longer one lengthens it.
+  assert.equal(buildCaptionSkeleton(actions, 20_000, 3000)[0].toMs, 4000);
+
+  // Negative half: the hold never lets a line run into the next labelled action
+  // or past the capture, whatever the preset asks for.
+  const two = [
+    ...actions,
+    { id: "b", type: "click" as const, atMs: 1500, durationMs: 0, label: "Done" }
+  ];
+  assert.equal(buildCaptionSkeleton(two, 20_000, 3000)[0].toMs, 1500);
+  assert.equal(buildCaptionSkeleton(actions, 2000, 3000)[0].toMs, 2000);
+});

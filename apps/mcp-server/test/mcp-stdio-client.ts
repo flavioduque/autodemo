@@ -41,6 +41,11 @@ export class McpStdioClient {
   /** The `initialize` result. */
   initResult: any;
 
+  /** The spawned server's pid: the ancestor of every browser it launches. */
+  get pid(): number {
+    return this.child.pid!;
+  }
+
   private constructor(private readonly child: ChildProcess, private readonly onToolCall?: (name: string) => void) {
     child.stdout!.setEncoding("utf8");
     child.stdout!.on("data", (chunk: string) => {

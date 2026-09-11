@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Saltmarsh - invoicing for project studios</title>
+<meta name="description" content="Saltmarsh turns approved milestones into invoices and tracks every payment to the day it lands." />
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<header class="nav">
+  <div class="shell nav-inner">
+    <a class="wordmark" href="/" data-testid="nav-logo">
+      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+        <rect x="0.5" y="0.5" width="19" height="19" rx="5.5" fill="none" stroke="#f2a23f" stroke-width="1.4"/>
+        <path d="M6 13.2c1.4 0 1.4-2.6 2.8-2.6s1.4 2.6 2.8 2.6 1.4-2.6 2.8-2.6" fill="none" stroke="#f2a23f" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M6 8.4h5.2" fill="none" stroke="#f2a23f" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      Saltmarsh
+    </a>
+    <nav class="nav-links">
+      <a href="#features" data-testid="nav-link-product">Product</a>
+      <a href="#customers" data-testid="nav-link-customers">Customers</a>
+    </nav>
+    <div class="nav-right">
+      <a class="nav-signin" href="/signup" data-testid="nav-signin">Sign in</a>
+      <a class="btn btn-primary btn-sm" href="/signup" data-testid="nav-cta">Start free</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="shell hero-grid">
+      <div class="hero-copy">
+        <h1 class="enter">Invoices that chase themselves.</h1>
+        <p class="hero-sub enter d1">Saltmarsh turns approved milestones into invoices, then follows every one to the day it is paid.</p>
+        <div class="hero-actions enter d2">
+          <a class="btn btn-primary" href="/signup" data-testid="hero-cta-primary">Start free</a>
+          <a class="btn btn-ghost" href="#features" data-testid="hero-cta-secondary">See how it works</a>
+        </div>
+      </div>
+
+      <!-- Product component, not a screenshot. The same markup renders on the
+           signup page and in the post-signup workspace. Figures are fictional. -->
+      <div class="panel enter d3" data-testid="hero-panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-label">Outstanding this month</div>
+            <div class="panel-figure">$47,190</div>
+          </div>
+          <div class="spark" aria-hidden="true">
+            <i style="height:34%"></i><i style="height:52%"></i><i style="height:28%"></i>
+            <i style="height:66%"></i><i style="height:48%"></i><i class="on" style="height:88%"></i>
+            <i class="on" style="height:72%"></i>
+          </div>
+        </div>
+        <div class="rows">
+          <div class="row">
+            <div>
+              <div class="row-name">Brackish Studio</div>
+              <div class="row-meta">Milestone 2 of 4 · approved Tue</div>
+            </div>
+            <div class="row-right">
+              <div class="row-amount">$12,400</div>
+              <span class="pill">Paid</span>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <div class="row-name">Nord &amp; Vane</div>
+              <div class="row-meta">Retainer, June</div>
+            </div>
+            <div class="row-right">
+              <div class="row-amount">$9,750</div>
+              <span class="pill pill-due">Due in 4 days</span>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <div class="row-name">Culvert Books</div>
+              <div class="row-meta">Site build, final</div>
+            </div>
+            <div class="row-right">
+              <div class="row-amount">$6,040</div>
+              <span class="pill pill-late">Overdue 3 days</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="strip">
+    <div class="shell strip-grid">
+      <div class="strip-item rise">
+        <div class="strip-figure">11<span class="unit">days</span></div>
+        <p class="strip-text">Median time from approved milestone to money received.</p>
+      </div>
+      <div class="strip-item rise">
+        <div class="strip-figure">1,840</div>
+        <p class="strip-text">Studios and independent shops billing through Saltmarsh.</p>
+      </div>
+      <div class="strip-item rise">
+        <div class="strip-figure">$2.4M</div>
+        <p class="strip-text">Invoiced last quarter across 14 currencies.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="shell">
+      <div class="section-head rise">
+        <h2>Billing that follows the work, not the calendar.</h2>
+        <p>Your project plan already knows what is done. Saltmarsh reads it and writes the invoice.</p>
+      </div>
+
+      <div class="bento">
+        <article class="cell cell-a rise">
+          <h3>Milestones become invoices</h3>
+          <p>Approve a milestone and the invoice is drafted, numbered and queued with the right terms.</p>
+          <div class="cell-body">
+            <div class="steps">
+              <div class="step done"><span>1</span><div><b>Milestone approved</b></div></div>
+              <div class="step done"><span>2</span><div><b>Invoice drafted</b></div></div>
+              <div class="step"><span>3</span><div>Sent to billing contact</div></div>
+              <div class="step"><span>4</span><div>Payment reconciled</div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="cell cell-b rise">
+          <h3>Reminders in your own words</h3>
+          <p>Write the follow-up once. Saltmarsh sends it on your schedule and stops the moment the payment clears.</p>
+          <div class="chips" aria-hidden="true">
+            <span class="chip chip-sent">Sent, day 0</span>
+            <span class="chip chip-sent">Nudge, day 7</span>
+            <span class="chip">Firmer, day 14</span>
+            <span class="chip">Call time, day 21</span>
+          </div>
+        </article>
+
+        <article class="cell cell-c rise">
+          <h3>One ledger, many currencies</h3>
+          <p>Bill in the client's currency, read your books in yours.</p>
+          <div class="tags">
+            <span class="tag tag-live">USD</span>
+            <span class="tag">EUR</span>
+            <span class="tag">GBP</span>
+            <span class="tag">SEK</span>
+            <span class="tag">BRL</span>
+          </div>
+        </article>
+
+        <article class="cell cell-d rise">
+          <h3>Retainers that roll over</h3>
+          <p>Unused hours carry forward, with the balance on every invoice.</p>
+          <div class="bars" aria-hidden="true">
+            <i style="height:42%"></i><i style="height:58%"></i><i style="height:36%"></i>
+            <i style="height:74%"></i><i class="on" style="height:92%"></i>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="quote-section" id="customers">
+    <div class="shell">
+      <div class="quote rise">
+        <blockquote>We stopped writing invoices on Fridays. They file themselves the hour a milestone is approved.</blockquote>
+        <p class="quote-by">
+          <b>Inês Corvelo</b>
+          Operations lead, Brackish Studio
+        </p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-inner">
+    <a class="wordmark" href="/" data-testid="footer-logo">
+      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+        <rect x="0.5" y="0.5" width="19" height="19" rx="5.5" fill="none" stroke="#f2a23f" stroke-width="1.4"/>
+        <path d="M6 13.2c1.4 0 1.4-2.6 2.8-2.6s1.4 2.6 2.8 2.6 1.4-2.6 2.8-2.6" fill="none" stroke="#f2a23f" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M6 8.4h5.2" fill="none" stroke="#f2a23f" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      Saltmarsh
+    </a>
+    <nav class="footer-links">
+      <a href="#features" data-testid="footer-link-product">Product</a>
+      <a href="#customers" data-testid="footer-link-customers">Customers</a>
+      <a href="/signup" data-testid="footer-cta">Start free</a>
+    </nav>
+    <p class="footer-note">Saltmarsh is a fictional product. This page exists to demonstrate screen recording, nothing more.</p>
+  </div>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

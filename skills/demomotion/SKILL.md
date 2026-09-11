@@ -46,12 +46,48 @@ Frame size is decided here too and cannot be changed later: the video is rendere
 at the session's `width` x `height`. There is no reframing pass, so a vertical cut
 means recording a vertical session.
 
-## 2. Plan 3–7 scenes
+## 2. Ask the user for the pacing — do not guess it
+
+Pacing is the single thing viewers notice first, and it is not inferable from the
+objective. A 15-second social clip and a 40-second tutorial of the same flow are
+different recordings, not different edits — typing speed and wait lengths are
+baked into the capture and cannot be added later.
+
+**Ask before recording.** Offer these three, in the user's language, and say
+which you recommend for their stated objective:
+
+| Preset | Length | For |
+|---|---|---|
+| **Product demo** | ~25 s | Launch video, README hero, sales. Brisk but followable. The default recommendation. |
+| **Tutorial** | ~40 s | Onboarding, support, docs — the viewer will REPRODUCE the steps. |
+| **Social / ad** | ~15 s | Autoplay without sound. Only the climax survives. |
+
+Then apply the preset's numbers. These are the knobs, not decoration:
+
+| Knob | Product demo | Tutorial | Social |
+|---|---|---|---|
+| `typeDelayMs` on `browser_fill` | 40 | 55 | 30, and only on the first field |
+| `browser_wait` after a navigation | 1200 ms | 2000 ms | 700 ms |
+| `browser_wait` between fields | 900 ms | 1500 ms | 300 ms |
+| Hold on the final result | 2500 ms | 3500 ms | 1500 ms |
+| Reading pause on a new screen | 2000 ms | 3000 ms | 900 ms |
+| Caption on screen | 2200 ms | 3000 ms | 1600 ms |
+| `cutTransitionMs` | 180 | 220 | 120 |
+| Speed ramps on filler | none | none | `speed: 2`–`2.5` on typing and loads |
+
+If the user does not answer, use **Product demo** and say so — do not stall.
+
+**Slowing down happens in the capture, never in the edit.** You could set
+`speed: 0.6` on an `editList` segment, and it will render — but slow-motion on a
+user interface reads as a rendering bug, not as rhythm. The cursor floats, text
+crawls. Record at the pace you want to watch.
+
+## 3. Plan 3–7 scenes
 
 Each scene: purpose · action · expected visible state · rough duration.
 A demo with more than seven scenes is two demos.
 
-## 3. Record
+## 4. Record
 
 `session_start` — defaults `1920x1080`, `headless: false` for local production.
 Returns `sessionId`; every browser tool needs it.
@@ -90,7 +126,7 @@ Rules:
 `session_stop` → writes `capture.json` (constant fps, frame ⇔ time exact) and
 returns its path plus `durationMs`. Keep both.
 
-## 4. `project_build`
+## 5. `project_build`
 
 Compiles `capture.json` into `project.json` and returns the whole project. What
 it seeds:
@@ -108,7 +144,7 @@ it seeds:
 
 Treat all of it as a first pass.
 
-## 5. `project_update` — the editing pass
+## 6. `project_update` — the editing pass
 
 A patch against `project.json`. Omitted fields keep their value. `style` is
 **merged** field by field; `zooms`, `editList`, `callouts` and `captions` are
@@ -219,12 +255,12 @@ one. There is no cursor field and nothing to send. Know how it behaves:
 - It is drawn at constant pixel size outside the camera, so zoom never bloats it.
 - A click whose instant was cut is never sampled — no orphan pulse.
 
-## 6. `render_video`
+## 7. `render_video`
 
 `{projectPath, outputPath?}` → H.264 MP4 (defaults to `final.mp4` beside the
 project). Re-render as many times as you like; the capture is untouched.
 
-## 7. Validate before you hand it over
+## 8. Validate before you hand it over
 
 - The file exists and its duration matches the `editList` arithmetic.
 - No credential, token or real customer datum is on screen.

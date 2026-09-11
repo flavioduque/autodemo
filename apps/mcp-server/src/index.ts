@@ -39,6 +39,38 @@ const captionInput = z.object({
   words: z.array(captionWordInput).default([])
 }).refine((v) => v.toMs > v.fromMs, "toMs must be greater than fromMs");
 
+/**
+ * Milliseconds between keystrokes when nothing is asked for.
+ *
+ * WHY TYPING IS THE DEFAULT. An agent sends the parameters it is told to send;
+ * an optional knob for "look less rushed" would be left unset on almost every
+ * demo, and the tool would keep producing the exact artifact the feedback was
+ * about. The rushed look is the defect, so the fix is the default and instant is
+ * the opt-out — one explicit `typeDelayMs: 0` away.
+ *
+ * WHY 40. Capture runs at 30 fps, so a frame is 33.3 ms: at 40 ms per character
+ * every keystroke lands on a frame of its own and the value is seen GROWING.
+ * Below ~33 ms characters start sharing a frame and the fill collapses back
+ * towards the single-frame jump this exists to remove; much above ~60 ms the
+ * demo starts to drag. 40 ms is also about 300 characters a minute — brisk,
+ * confident typing rather than hunt-and-peck.
+ */
+const DEFAULT_TYPE_DELAY_MS = 40;
+
+/** Exported so the accepted surface can be exercised without booting a server. */
+export const browserFillInput = z.object({
+  sessionId: z.string(),
+  selector: z.string().min(1),
+  value: z.string(),
+  label: z.string().optional(),
+  /**
+   * Per-character delay. 25–60 ms is the useful band for a demo; 0 restores the
+   * instant fill. Capped at 200 ms — past that a field takes longer to fill than
+   * anyone will watch.
+   */
+  typeDelayMs: z.number().int().min(0).max(200).default(DEFAULT_TYPE_DELAY_MS)
+});
+
 /** Exported so the accepted surface can be exercised without booting a server. */
 export const projectUpdateInput = z.object({
   projectPath: z.string(),
@@ -121,15 +153,13 @@ function createServer() {
   });
 
   server.registerTool("browser_fill", {
-    description: "Fill an input while recording. The typed value is redacted from the timeline manifest. The selector is resolved across frames on the same rule as browser_click.",
-    inputSchema: z.object({
-      sessionId: z.string(),
-      selector: z.string().min(1),
-      value: z.string(),
-      label: z.string().optional()
-    })
-  }, async ({sessionId, selector, value, label}) => {
-    await fill(sessionId, selector, value, label);
+    description:
+      "Fill an input while recording. BY DEFAULT the value is TYPED character by character, because a field that jumps from empty to complete in a single frame is the most rushed-looking thing in a form demo — a viewer reads typing as a person, and an instant fill as a machine. " +
+      "Set typeDelayMs: 0 to go back to an instant fill for values nobody wants to watch being typed: a UUID, an API token, a long opaque id. Typing lengthens the capture (roughly value.length * typeDelayMs), so budget for it when planning the demo's duration. " +
+      "The value is redacted from the timeline manifest either way. The selector is resolved across frames on the same rule as browser_click.",
+    inputSchema: browserFillInput
+  }, async ({sessionId, selector, value, label, typeDelayMs}) => {
+    await fill(sessionId, selector, value, label, typeDelayMs);
     return result({ ok: true });
   });
 

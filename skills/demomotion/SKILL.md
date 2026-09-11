@@ -74,6 +74,16 @@ Rules:
   "One form adds the client"` beats `label: "Save"`.
 - Never type a password, token or key. `browser_fill` redacts the value from
   `capture.json`, but the target app still *renders* it. Use seeded demo data.
+- **`browser_fill` types the value character by character** (`typeDelayMs`,
+  default 40 ms/char). A field that goes from empty to complete in one frame
+  reads as a machine; typing reads as a person, and form demos live on that.
+  Leave the default for anything the viewer is meant to watch being filled — a
+  name, an e-mail, a short search query. Pass `typeDelayMs: 0` for values nobody
+  wants to sit through: a UUID, a long token, an opaque id; fill those instantly
+  and spend the screen time on the result instead.
+- Typing costs capture time: roughly `value.length * typeDelayMs`, so a 30-char
+  field is ~1.2 s on its own. Count it in the scene's duration and shorten the
+  `browser_wait` after a fill accordingly — the typing already *is* the pause.
 - Keep pauses short. Dead time is cheaper to cut than to sit through, but it is
   cheapest not to record.
 

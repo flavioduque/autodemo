@@ -9,6 +9,7 @@ import { DemoProjectSchema } from "@demomotion/schema";
 import { generateComposition } from "@demomotion/compositor";
 import { renderCompositionHtml, telemetryEnv, videoSrcName } from "../src/render.ts";
 import { fixtureSourceVideo, DURATION_SEC } from "./fixture-media.ts";
+import { solidBox, describeBox, type ColorMask } from "./solid-box.ts";
 
 const run = promisify(execFile);
 
@@ -67,30 +68,16 @@ async function blackDurations(mp4: string, fromSec: number, toSec: number): Prom
   return [...String(stderr).matchAll(/black_duration:([\d.]+)/g)].map((m) => Number(m[1]));
 }
 
-/** Bounding box of every pixel close to `rgb` in one extracted frame. */
+/**
+ * The solid block of pixels close to `rgb` in one extracted frame — see
+ * solid-box.ts for why it is the largest connected block and not a bounding
+ * box over every match.
+ */
 async function markerBox(mp4: string, atSec: number, rgb: [number, number, number], width = 1920, height = 1080) {
-  const { stdout } = await run("ffmpeg", [
-    "-v", "error", "-ss", String(atSec), "-i", mp4, "-frames:v", "1",
-    "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
-  ], { encoding: "buffer", maxBuffer: 256 * 1024 * 1024 });
-  const buf = stdout as unknown as Buffer;
-  assert.equal(buf.length, width * height * 3, "unexpected raw frame size");
-
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, count = 0;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 3;
-      if (Math.abs(buf[i] - rgb[0]) <= 28 && Math.abs(buf[i + 1] - rgb[1]) <= 28 && Math.abs(buf[i + 2] - rgb[2]) <= 28) {
-        count++;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-  assert.ok(count > 500, `found only ${count} pixels of rgb(${rgb}) — the marker is not on screen at ${atSec}s`);
-  return { width: maxX - minX + 1, height: maxY - minY + 1, count };
+  const mask = await colorMask(mp4, atSec, rgb, width, height);
+  assert.ok(mask.count > 500, `found only ${mask.count} pixels of rgb(${rgb}) — the marker is not on screen at ${atSec}s`);
+  const box = solidBox(mask);
+  return { width: box.width, height: box.height, count: mask.count, detail: describeBox(box) };
 }
 
 const TL_RED: [number, number, number] = [225, 29, 72]; // .corner--tl { background: #e11d48 }
@@ -242,7 +229,7 @@ test("corner markers come out square — the objectFit:cover crop is gone", { sk
 
     // The fixture draws a 128x128 marker. Whatever the scale, it must stay square.
     const ratio = box.width / box.height;
-    assert.ok(Math.abs(ratio - 1) < 0.04, `top-left marker is ${box.width}x${box.height} (ratio ${ratio.toFixed(3)}) — not square`);
+    assert.ok(Math.abs(ratio - 1) < 0.04, `top-left marker is ${box.width}x${box.height} (ratio ${ratio.toFixed(3)}) — not square (${box.detail})`);
 
     // Half two: prove the measurement can tell the difference. Rebuild the old
     // Remotion geometry — padded box of the WRONG aspect plus object-fit:cover —
@@ -257,7 +244,8 @@ test("corner markers come out square — the objectFit:cover crop is gone", { sk
     await renderCompositionHtml(cropped, SOURCE, bad, videoSrc);
     const badBox = await markerBox(bad, 8.0, TL_RED);
     const badRatio = badBox.width / badBox.height;
-    assert.ok(badRatio - 1 > 0.1, `cover control produced ${badBox.width}x${badBox.height} (ratio ${badRatio.toFixed(3)}) — the squareness check cannot detect the crop`);
+    assert.ok(badRatio - 1 > 0.1, `cover control produced ${badBox.width}x${badBox.height} (ratio ${badRatio.toFixed(3)}) — the squareness check cannot detect the crop (${badBox.detail})`);
+    process.stderr.write(`[render] square check: good ${box.width}x${box.height} (${box.detail}); cover control ${badBox.width}x${badBox.height} (${badBox.detail})\n`);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -436,53 +424,23 @@ test("the composition opens and closes on the background colour", { skip, timeou
 // ---------------------------------------------------------------------------
 
 /** Every pixel of one extracted frame that is close to `rgb`, as a mask. */
-async function colorMask(mp4: string, atSec: number, rgb: [number, number, number], width: number, height: number) {
+async function colorMask(mp4: string, atSec: number, rgb: [number, number, number], width: number, height: number): Promise<ColorMask> {
   const { stdout } = await run("ffmpeg", [
     "-v", "error", "-ss", String(atSec), "-i", mp4, "-frames:v", "1",
     "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
   ], { encoding: "buffer", maxBuffer: 256 * 1024 * 1024 });
   const buf = stdout as unknown as Buffer;
   assert.equal(buf.length, width * height * 3, "unexpected raw frame size");
-  const rows = new Int32Array(height);
-  const cols = new Int32Array(width);
+  const data = new Uint8Array(width * height);
   let count = 0;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 3;
-      if (Math.abs(buf[i] - rgb[0]) <= 28 && Math.abs(buf[i + 1] - rgb[1]) <= 28 && Math.abs(buf[i + 2] - rgb[2]) <= 28) {
-        count++;
-        rows[y]++;
-        cols[x]++;
-      }
+  for (let p = 0; p < data.length; p++) {
+    const i = p * 3;
+    if (Math.abs(buf[i] - rgb[0]) <= 28 && Math.abs(buf[i + 1] - rgb[1]) <= 28 && Math.abs(buf[i + 2] - rgb[2]) <= 28) {
+      count++;
+      data[p] = 1;
     }
   }
-  return { count, rows, cols };
-}
-
-/**
- * The box of the SOLID block of `rgb`: the rows and columns carrying at least
- * `floor` matching pixels.
- *
- * A plain bounding box cannot be used here. H.264 leaves a handful of stray
- * pixels inside the tolerance at the far edge of the picture — four of them, out
- * of 28160 — and a bounding box over every match therefore measured the marker
- * as 958 px wide. The floor keeps the marker's own rows and columns (~185
- * matches each) and drops noise, which is the property being measured.
- */
-function solidBox(mask: { rows: Int32Array; cols: Int32Array }, floor = 20) {
-  const span = (counts: Int32Array) => {
-    let min = -1;
-    let max = -1;
-    for (let i = 0; i < counts.length; i++) {
-      if (counts[i] >= floor) {
-        if (min < 0) min = i;
-        max = i;
-      }
-    }
-    assert.ok(min >= 0, `no line of the frame carries ${floor} matching pixels`);
-    return max - min + 1;
-  };
-  return { width: span(mask.cols), height: span(mask.rows) };
+  return { width, height, data, count };
 }
 
 async function frameSize(mp4: string) {
@@ -547,8 +505,8 @@ test("a 16:9 capture published 9:16 is vertical, and keeps the side the action i
     // above and fail here.
     const marker = solidBox(verticalMask);
     const ratio = marker.width / marker.height;
-    assert.ok(Math.abs(ratio - 1) < 0.04, `the reframed marker is ${marker.width}x${marker.height} — not square`);
-    assert.ok(Math.abs(marker.width - 185) <= 4, `expected a ~185 px marker, got ${marker.width}`);
+    assert.ok(Math.abs(ratio - 1) < 0.04, `the reframed marker is ${marker.width}x${marker.height} — not square (${describeBox(marker)})`);
+    assert.ok(Math.abs(marker.width - 185) <= 4, `expected a ~185 px marker, got ${marker.width} (${describeBox(marker)})`);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

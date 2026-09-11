@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn, execFile, type ChildProcess } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
 import net from "node:net";
@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { McpStdioClient, step } from "./mcp-stdio-client.ts";
 
 // ---------------------------------------------------------------------------
 // The ONLY test that talks to DemoMotion the way a real MCP client does.
@@ -23,7 +24,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // plus ffmpeg/ffprobe on PATH, so it is gated:
 //
 //   DEMOMOTION_E2E_TESTS=1 DEMOMOTION_BROWSER_CHANNEL=chrome \
-//     pnpm --filter @demomotion/mcp-server test
+//     pnpm --filter demomotion test
 //
 // Progress markers go to stderr as the calls happen; DEMOMOTION_E2E_DEBUG=1 also
 // forwards the spawned server's own stderr.
@@ -35,8 +36,9 @@ const TIMEOUT = 1_500_000;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
-const SERVER_ENTRY = path.resolve(HERE, "../src/index.ts");
+const SERVER_ENTRY = path.resolve(HERE, "../src/cli.ts");
 const FIXTURE_SERVER = path.join(REPO, "fixtures/target-app/server.mjs");
+const SHOWCASE_SERVER = path.join(REPO, "fixtures/showcase-app/server.mjs");
 const REPO_SESSIONS = path.join(REPO, "data/sessions");
 
 // The bundled Chromium cannot install on macOS 13; drive the installed Chrome.
@@ -55,7 +57,7 @@ const EXPECTED_TOOLS = [
   "session_start", "browser_inspect", "browser_scroll", "browser_keypress",
   "browser_goto", "browser_click", "browser_fill", "browser_wait",
   "browser_screenshot", "session_status", "session_stop",
-  "project_build", "project_update", "demo_finalize", "render_video"
+  "project_build", "project_update", "demo_finalize", "render_video", "demo_create"
 ];
 
 /**
@@ -68,133 +70,22 @@ const EXPECTED_TOOLS = [
  */
 const INVOKED = new Set<string>();
 
-type ToolResult = { isError: boolean; text: string; payload: any };
-
-/** Longest a single JSON-RPC call may take before the test calls it a hang. */
-const DEFAULT_CALL_TIMEOUT_MS = 120_000;
 const RENDER_CALL_TIMEOUT_MS = 900_000;
 
-/** Progress marker on stderr — the only way to see where a wire test is stuck. */
-function step(message: string) {
-  process.stderr.write(`[e2e ${new Date().toISOString().slice(11, 19)}] ${message}\n`);
-}
-
-/** A minimal MCP client: newline-delimited JSON-RPC over the child's stdio. */
-class McpStdioClient {
-  private buffer = "";
-  private nextId = 1;
-  private readonly pending = new Map<number, (msg: any) => void>();
-
-  private constructor(private readonly child: ChildProcess) {
-    child.stdout!.setEncoding("utf8");
-    child.stdout!.on("data", (chunk: string) => this.onData(chunk));
-    child.stderr!.on("data", (d) => {
-      if (process.env.DEMOMOTION_E2E_DEBUG === "1") process.stderr.write(`[server] ${d}`);
-    });
-  }
-
-  static async start(cwd: string): Promise<McpStdioClient> {
-    const child = spawn(process.execPath, ["--import", TSX_LOADER, SERVER_ENTRY], {
-      cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env }
-    });
-    const client = new McpStdioClient(child);
-    const init = await client.request("initialize", {
-      protocolVersion: "2025-06-18",
-      capabilities: {},
-      clientInfo: { name: "demomotion-e2e", version: "0" }
-    });
-    assert.equal(init.serverInfo?.name, "demomotion", `unexpected serverInfo: ${JSON.stringify(init)}`);
-    client.notify("notifications/initialized", {});
-    return client;
-  }
-
-  private onData(chunk: string) {
-    this.buffer += chunk;
-    let index: number;
-    while ((index = this.buffer.indexOf("\n")) >= 0) {
-      const line = this.buffer.slice(0, index).trim();
-      this.buffer = this.buffer.slice(index + 1);
-      if (!line) continue;
-      const message = JSON.parse(line);
-      const resolve = message.id != null ? this.pending.get(message.id) : undefined;
-      if (resolve) {
-        this.pending.delete(message.id);
-        resolve(message);
-      }
-    }
-  }
-
-  /**
-   * Resolves with the JSON-RPC `result`; rejects on a transport-level `error`.
-   * A call that never answers rejects too — a wire that hangs is a failure, and
-   * a test that waited forever would report nothing at all.
-   */
-  request(method: string, params: unknown, timeoutMs = DEFAULT_CALL_TIMEOUT_MS): Promise<any> {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`${method} did not answer within ${timeoutMs} ms`));
-      }, timeoutMs);
-      this.pending.set(id, (message) => {
-        clearTimeout(timer);
-        if (message.error) reject(new Error(`${method} failed: ${JSON.stringify(message.error)}`));
-        else resolve(message.result);
-      });
-      this.child.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-    });
-  }
-
-  notify(method: string, params: unknown) {
-    this.child.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
-  }
-
-  /**
-   * Calls a tool and decodes the result BODY.
-   *
-   * An MCP tool failure is a normal result carrying `isError: true`, not a
-   * transport failure — a test that only checked "no exception was thrown"
-   * would pass on every single broken tool. Nothing here throws on `isError`;
-   * the caller decides which half it is asserting.
-   */
-  async callTool(name: string, args: Record<string, unknown>, timeoutMs?: number): Promise<ToolResult> {
-    step(`-> ${name}`);
-    INVOKED.add(name);
-    const result = await this.request("tools/call", { name, arguments: args }, timeoutMs);
-    step(`<- ${name}${result.isError === true ? " (isError)" : ""}`);
-    const text = result?.content?.[0]?.text ?? "";
-    assert.equal(result?.content?.[0]?.type, "text", `${name} returned no text content: ${JSON.stringify(result)}`);
-    let payload: any = undefined;
-    if (result.isError !== true) {
-      payload = JSON.parse(text); // every tool answers with JSON.stringify'd data
-    }
-    return { isError: result.isError === true, text, payload };
-  }
-
-  /** Calls a tool and asserts it SUCCEEDED, surfacing the error body if not. */
-  async callOk(name: string, args: Record<string, unknown>, timeoutMs?: number): Promise<any> {
-    const result = await this.callTool(name, args, timeoutMs);
-    assert.equal(result.isError, false, `${name} came back as an MCP error: ${result.text}`);
-    return result.payload;
-  }
-
-  /**
-   * Tears the server down for real. SIGTERM alone left the child alive in an
-   * early version of this test, and a live child keeps the runner's event loop
-   * open — the process then hangs AFTER the assertions, and node:test never
-   * flushes the failure. SIGKILL, then drop the stream handles.
-   */
-  close() {
-    this.child.stdout?.removeAllListeners();
-    this.child.stderr?.removeAllListeners();
-    this.child.stdout?.destroy();
-    this.child.stderr?.destroy();
-    this.child.stdin?.destroy();
-    this.child.kill("SIGKILL");
-    this.child.unref();
-  }
+/**
+ * Spawns the server the way the README used to tell MCP clients to: the TypeScript
+ * entry under tsx. Sessions are pinned to the test's own cwd with DEMOMOTION_HOME
+ * so every path the server reports can be checked to stay inside it.
+ */
+function startServer(cwd: string): Promise<McpStdioClient> {
+  return McpStdioClient.start({
+    command: process.execPath,
+    args: ["--import", TSX_LOADER, SERVER_ENTRY],
+    cwd,
+    env: { ...process.env, DEMOMOTION_HOME: cwd },
+    clientName: "demomotion-e2e",
+    onToolCall: (name) => INVOKED.add(name)
+  });
 }
 
 async function freePort(): Promise<number> {
@@ -209,11 +100,20 @@ async function freePort(): Promise<number> {
 }
 
 /** Runs the real `pnpm fixture` server (fixtures/target-app/server.mjs). */
-async function startFixtureServer(): Promise<{ origin: string; stop: () => void }> {
+function startFixtureServer() {
+  return startStaticServer(FIXTURE_SERVER, "FIXTURE_PORT");
+}
+
+/** Runs the real `pnpm showcase` server (fixtures/showcase-app/server.mjs): the signup flow demo_create is proven on. */
+function startShowcaseServer() {
+  return startStaticServer(SHOWCASE_SERVER, "SHOWCASE_PORT");
+}
+
+async function startStaticServer(script: string, portVariable: string): Promise<{ origin: string; stop: () => void }> {
   const port = await freePort();
-  const child = spawn(process.execPath, [FIXTURE_SERVER], {
+  const child = spawn(process.execPath, [script], {
     stdio: ["ignore", "ignore", "pipe"],
-    env: { ...process.env, FIXTURE_PORT: String(port) }
+    env: { ...process.env, [portVariable]: String(port) }
   });
   const origin = `http://127.0.0.1:${port}`;
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -251,6 +151,29 @@ async function mp4Size(file: string): Promise<{ width: number; height: number }>
   return { width, height };
 }
 
+/**
+ * The browser processes a server has spawned: every descendant of `serverPid`
+ * whose command line is a Chrome/Chromium binary. Read from `ps`, not from the
+ * server — the claim under test is that the process is GONE, and only the OS
+ * can say that.
+ */
+async function browserProcessesOf(serverPid: number): Promise<string[]> {
+  const { stdout } = await run("ps", ["-Ao", "pid=,ppid=,command="]);
+  const rows = String(stdout).split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+    const [pid, ppid, ...command] = line.split(/\s+/);
+    return { pid: Number(pid), ppid: Number(ppid), command: command.join(" ") };
+  });
+  const descendants = new Set<number>([serverPid]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const row of rows) {
+      if (descendants.has(row.ppid) && !descendants.has(row.pid)) { descendants.add(row.pid); grew = true; }
+    }
+  }
+  return rows.filter((row) => row.pid !== serverPid && descendants.has(row.pid) && /chrom(e|ium)/i.test(row.command)).map((row) => `${row.pid} ${row.command.slice(0, 80)}`);
+}
+
 /** Names of the session directories the repo has right now. */
 async function repoSessionDirs(): Promise<string[]> {
   return (await fs.readdir(REPO_SESSIONS).catch(() => [] as string[])).sort();
@@ -269,7 +192,7 @@ test("a real MCP client drives capture, build, edit and render end to end over s
   // inside the temp cwd" assertions below compare the two.
   const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-")));
   const fixture = await startFixtureServer();
-  const client = await McpStdioClient.start(cwd);
+  const client = await startServer(cwd);
   try {
     // --- tools/list: the published surface -------------------------------
     const listed = await client.request("tools/list", {});
@@ -465,7 +388,7 @@ test("demo_finalize takes a live session all the way to an MP4 in one call",
   const sessionsBefore = await repoSessionDirs();
   const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-final-")));
   const fixture = await startFixtureServer();
-  const client = await McpStdioClient.start(cwd);
+  const client = await startServer(cwd);
   try {
     const { sessionId } = await client.callOk("session_start", { width: WIDTH, height: HEIGHT, headless: true });
     await client.callOk("browser_goto", { sessionId, url: `${fixture.origin}/` });
@@ -514,10 +437,241 @@ test("demo_finalize takes a live session all the way to an MP4 in one call",
     "the run left session directories behind in the repo's data/");
 });
 
+// ---------------------------------------------------------------------------
+// demo_create — one call, one MP4 (issue #6)
+// ---------------------------------------------------------------------------
+
+/**
+ * The showcase signup flow, as an agent would send it. Labels are narration,
+ * not button text: `captions: "auto"` turns each one into a caption line.
+ * The SAME array is the control for the mid-way-failure test below, which
+ * breaks exactly one selector of it.
+ */
+const SIGNUP_STEPS = [
+  { action: "fill", selector: '[data-testid="signup-name-input"]', value: "Inês Corvelo", label: "Your name opens the workspace" },
+  { action: "fill", selector: '[data-testid="signup-email-input"]', value: "ines@studio.com", label: "One e-mail, no verification step" },
+  { action: "fill", selector: '[data-testid="signup-password-input"]', value: "Marsh-tide-2024", label: "The meter reacts to every character" },
+  { action: "click", selector: '[data-testid="signup-terms-checkbox"]', label: "Agree to the terms" },
+  // A beat before submitting, as a person takes. It is also what keeps the
+  // previous label's caption alive: two labelled actions on the SAME screencast
+  // frame give the first one a zero-length window, and the skeleton drops it
+  // (SKILL.md section 5: a line is hard-capped by the next labelled action).
+  { action: "wait", ms: 600 },
+  { action: "click", selector: '[data-testid="signup-submit"]', label: "The workspace is ready" },
+  { action: "wait", ms: 1200 }
+];
+/** The caller's own waits in the flow above. */
+const EXPLICIT_WAIT_MS = 600 + 1200;
+const SIGNUP_LABELS = SIGNUP_STEPS.flatMap((s) => (s.label ? [s.label] : []));
+/** Characters typed across the three fields. */
+const TYPED_CHARS = 12 + 15 + 15;
+
+/** The error body of an `isError` result, decoded. */
+function errorPayload(result: { isError: boolean; text: string }): any {
+  assert.equal(result.isError, true, `expected an MCP error, got: ${result.text}`);
+  try { return JSON.parse(result.text); } catch { assert.fail(`the error body is not JSON: ${result.text}`); }
+}
+
+test("demo_create turns a URL and a step list into an MP4 in one call",
+  { skip, timeout: TIMEOUT }, async () => {
+  const sessionsBefore = await repoSessionDirs();
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-create-")));
+  const showcase = await startShowcaseServer();
+  const client = await startServer(cwd);
+  try {
+    const outputPath = path.join(cwd, "signup.mp4");
+    const created = await client.callOk("demo_create", {
+      url: `${showcase.origin}/signup`, title: "Saltmarsh signup", steps: SIGNUP_STEPS,
+      viewport: { width: WIDTH, height: HEIGHT }, headless: true, outputPath
+    }, RENDER_CALL_TIMEOUT_MS);
+
+    // Every path it claims exists, inside the test cwd.
+    assert.equal(created.video, outputPath);
+    assert.equal(created.pacing, "product-demo");
+    for (const key of ["video", "project", "capture"]) {
+      assert.ok(String(created[key]).startsWith(cwd), `${key} escaped the test cwd: ${created[key]}`);
+      await fs.access(created[key]);
+    }
+    assert.ok((await fs.stat(outputPath)).size > 50_000, "the MP4 is implausibly small");
+    assert.deepEqual(created.blockedRequests, []);
+
+    // Duration, bounded by hand from SKILL.md's product-demo numbers: 1200 ms
+    // after the opening navigation, 40 ms/char over 42 chars, 900 ms after each
+    // of three fills, the caller's own waits, 2500 ms hold on the result.
+    const floorSec = (1200 + TYPED_CHARS * 40 + 3 * 900 + EXPLICIT_WAIT_MS + 2500) / 1000;
+    const seconds = await mp4Duration(outputPath);
+    assert.ok(seconds >= floorSec, `rendered ${seconds.toFixed(2)}s, but the pacing alone adds up to ${floorSec.toFixed(2)}s`);
+    assert.ok(seconds < floorSec + 6, `rendered ${seconds.toFixed(2)}s for a plan of ${floorSec.toFixed(2)}s of pacing — something stalled`);
+    assert.ok(Math.abs(seconds - created.durationMs / 1000) < 0.4, `durationMs ${created.durationMs} does not match the file (${seconds.toFixed(2)}s)`);
+    assert.deepEqual(await mp4Size(outputPath), { width: WIDTH, height: HEIGHT });
+
+    // The project on disk carries the preset and the auto captions.
+    const project = JSON.parse(await fs.readFile(created.project, "utf8"));
+    assert.equal(project.title, "Saltmarsh signup");
+    assert.equal(project.style.cutTransitionMs, 180);
+    assert.equal(project.output, undefined, "product-demo publishes at the capture's own frame");
+    assert.deepEqual(project.captions.map((c: any) => c.text), SIGNUP_LABELS, "captions: \"auto\" did not seed one line per label");
+    for (const caption of project.captions) {
+      assert.ok(caption.toMs - caption.fromMs <= 2200, `caption "${caption.text}" holds ${caption.toMs - caption.fromMs} ms, over product-demo's 2200`);
+      assert.ok(caption.words.length > 0);
+    }
+    // The last label has 1200 + 2500 ms of free run after it: the hold is the preset's, exactly.
+    const last = project.captions.at(-1);
+    assert.equal(last.toMs - last.fromMs, 2200);
+
+    // The capture shows the pacing was really recorded, not just written down:
+    // every fill was typed (~40 ms/char), and the session is gone.
+    const capture = JSON.parse(await fs.readFile(created.capture, "utf8"));
+    const fills = capture.actions.filter((a: any) => a.type === "fill");
+    assert.equal(fills.length, 3);
+    for (const [i, chars] of [12, 15, 15].entries()) {
+      assert.ok(fills[i].durationMs >= chars * 40, `fill ${i} took ${fills[i].durationMs} ms for ${chars} chars: not typed at 40 ms/char`);
+      assert.equal(fills[i].value, "[redacted]");
+    }
+    const gone = await client.callTool("session_status", { sessionId: created.sessionId });
+    assert.equal(gone.isError, true);
+    assert.match(gone.text, new RegExp(`Unknown session: ${created.sessionId}`));
+  } finally {
+    client.close();
+    showcase.stop();
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+  assert.deepEqual(await repoSessionDirs(), sessionsBefore, "the run left session directories behind in the repo's data/");
+});
+
+test("demo_create with the social preset publishes vertical without being told",
+  { skip, timeout: TIMEOUT }, async () => {
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-social-")));
+  const showcase = await startShowcaseServer();
+  const client = await startServer(cwd);
+  try {
+    const outputPath = path.join(cwd, "social.mp4");
+    const created = await client.callOk("demo_create", {
+      url: `${showcase.origin}/signup`, title: "Saltmarsh social", steps: SIGNUP_STEPS, pacing: "social",
+      viewport: { width: WIDTH, height: HEIGHT }, headless: true, outputPath
+    }, RENDER_CALL_TIMEOUT_MS);
+    assert.equal(created.pacing, "social");
+
+    // The defect from #1, closed at the preset: a 16:9 capture, a 9:16 file.
+    assert.deepEqual(await mp4Size(outputPath), { width: 1080, height: 1920 });
+    const project = JSON.parse(await fs.readFile(created.project, "utf8"));
+    assert.deepEqual(project.output, { width: 1080, height: 1920 });
+    assert.equal(project.width, WIDTH, "the RECORDED frame stays the capture's");
+    assert.equal(project.style.cutTransitionMs, 120);
+    assert.deepEqual(project.captions.map((c: any) => c.text), SIGNUP_LABELS);
+    const last = project.captions.at(-1);
+    assert.equal(last.toMs - last.fromMs, 1600, "social's caption hold");
+
+    // Social types ONLY the first field: 30 ms/char on the name, instant after.
+    const capture = JSON.parse(await fs.readFile(created.capture, "utf8"));
+    const fills = capture.actions.filter((a: any) => a.type === "fill");
+    assert.ok(fills[0].durationMs >= 12 * 30, `the first field took ${fills[0].durationMs} ms: not typed at 30 ms/char`);
+    for (const fill of fills.slice(1)) {
+      assert.ok(fill.durationMs < 15 * 30, `a later field took ${fill.durationMs} ms: it was typed, social fills it instantly`);
+    }
+    // And it is shorter than the product demo would be: 700 + 360 + 3*300 + the caller's waits + 1500.
+    const floorSec = (700 + 12 * 30 + 3 * 300 + EXPLICIT_WAIT_MS + 1500) / 1000;
+    const seconds = await mp4Duration(outputPath);
+    assert.ok(seconds >= floorSec && seconds < floorSec + 6, `rendered ${seconds.toFixed(2)}s against a ${floorSec.toFixed(2)}s plan`);
+  } finally {
+    client.close();
+    showcase.stop();
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a step that fails half-way names itself, keeps the capture, and leaves no browser behind",
+  { skip, timeout: TIMEOUT }, async () => {
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-fail-")));
+  const showcase = await startShowcaseServer();
+  const client = await startServer(cwd);
+  try {
+    // Seed the detector first: a live session IS visible as a browser process
+    // under the server, and stopping it makes that list empty. Without this,
+    // "no browser left" below would be an assertion over an empty table.
+    const { sessionId: probe } = await client.callOk("session_start", { width: WIDTH, height: HEIGHT, headless: true });
+    await client.callOk("browser_goto", { sessionId: probe, url: `${showcase.origin}/` }); // a capture needs at least one frame
+    const live = await browserProcessesOf(client.pid);
+    assert.ok(live.length > 0, "the detector sees no browser under a server with a live session");
+    await client.callOk("session_stop", { sessionId: probe });
+    assert.deepEqual(await browserProcessesOf(client.pid), [], "session_stop left a browser behind");
+
+    // Step 3 of the control flow (the terms checkbox), with a selector that exists nowhere.
+    const broken = SIGNUP_STEPS.map((s, i) => (i === 3 ? { ...s, selector: '[data-testid="signup-terms-checkbox-missing"]' } : s));
+    const failed = await client.callTool("demo_create", {
+      url: `${showcase.origin}/signup`, title: "Broken", steps: broken,
+      viewport: { width: WIDTH, height: HEIGHT }, headless: true
+    }, RENDER_CALL_TIMEOUT_MS);
+    const payload = errorPayload(failed);
+    step(`demo_create error payload:\n${JSON.stringify(payload, null, 2)}`);
+
+    // The error names the step: index, action, selector, and the real cause.
+    assert.equal(payload.stage, "step");
+    assert.deepEqual(payload.step, { index: 3, action: "click", selector: '[data-testid="signup-terms-checkbox-missing"]', label: "Agree to the terms" });
+    assert.match(payload.error, /^demo_create failed at step 3 \(click "\[data-testid=\\"signup-terms-checkbox-missing\\"\]"\): /);
+    assert.match(payload.cause, /signup-terms-checkbox-missing/);
+    assert.equal(payload.project, undefined);
+    assert.equal(payload.video, undefined);
+    assert.equal(JSON.stringify(payload).includes("Marsh-tide-2024"), false, "a typed value leaked into the error");
+
+    // Nothing is lost: the capture up to the failure is on disk, with the three fills.
+    assert.ok(String(payload.capture).startsWith(cwd), `capture escaped the cwd: ${payload.capture}`);
+    const capture = JSON.parse(await fs.readFile(payload.capture, "utf8"));
+    assert.deepEqual(capture.actions.map((a: any) => a.type), ["goto", "wait", "fill", "wait", "fill", "wait", "fill", "wait"]);
+    await fs.access(capture.videoPath);
+
+    // The session is gone from the server, and the browser is gone from the OS.
+    const gone = await client.callTool("session_status", { sessionId: payload.sessionId });
+    assert.equal(gone.isError, true, "session_status still answers for the failed session");
+    assert.match(gone.text, new RegExp(`Unknown session: ${payload.sessionId}`));
+    assert.deepEqual(await browserProcessesOf(client.pid), [], "the failed demo_create leaked a browser");
+  } finally {
+    client.close();
+    showcase.stop();
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a goto off the allowlist fails with the network policy's own message, and cleans up",
+  { skip, timeout: TIMEOUT }, async () => {
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-policy-")));
+  const showcase = await startShowcaseServer();
+  const client = await startServer(cwd);
+  try {
+    const failed = await client.callTool("demo_create", {
+      url: `${showcase.origin}/`, title: "Off the allowlist",
+      steps: [{ action: "goto", url: "http://example.com/" }, { action: "wait", ms: 500 }],
+      viewport: { width: WIDTH, height: HEIGHT }, headless: true
+    }, RENDER_CALL_TIMEOUT_MS);
+    const payload = errorPayload(failed);
+    assert.equal(payload.stage, "step");
+    assert.deepEqual(payload.step, { index: 0, action: "goto", url: "http://example.com/" });
+    assert.match(payload.cause, /^DemoMotion refused http:\/\/example\.com\/: "example\.com:80" is not in DEMOMOTION_ALLOWED_HOSTS/);
+    assert.match(payload.error, /^demo_create failed at step 0 \(goto http:\/\/example\.com\/\): DemoMotion refused/);
+    // The refusal is also on the record, as session_status would have shown it.
+    const block = (payload.blockedRequests as Array<any>).find((b) => b.host === "example.com");
+    assert.ok(block, `no blocked request for example.com in ${JSON.stringify(payload.blockedRequests)}`);
+    assert.equal(block.kind, "navigation");
+    // The opening navigation (allowed) was recorded before the refusal.
+    await fs.access(payload.capture);
+    const capture = JSON.parse(await fs.readFile(payload.capture, "utf8"));
+    assert.equal(capture.actions[0].type, "goto");
+    assert.equal(capture.actions[0].url, `${showcase.origin}/`);
+
+    const gone = await client.callTool("session_status", { sessionId: payload.sessionId });
+    assert.match(gone.text, new RegExp(`Unknown session: ${payload.sessionId}`));
+    assert.deepEqual(await browserProcessesOf(client.pid), [], "the refused demo_create leaked a browser");
+  } finally {
+    client.close();
+    showcase.stop();
+    await fs.rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("every tool the server publishes was actually called over the wire",
   { skip }, async () => {
-  // The gap this closes: tools/list published fifteen tools and the flow above
-  // exercised ten. The five that were never invoked included browser_inspect,
+  // The gap this closes: tools/list once published fifteen tools and the flow
+  // above exercised ten. The five that were never invoked included browser_inspect,
   // which was broken in the very runtime this file spawns. Listing is not
   // calling, and only calling finds that kind of defect.
   const missing = EXPECTED_TOOLS.filter((name) => !INVOKED.has(name));

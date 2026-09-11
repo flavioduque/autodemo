@@ -6,6 +6,8 @@ Escopo: sub-projetos 0 e 1 (fundação verificada + qualidade cinematográfica)
 
 ## 0. O que este documento é — e o que o projeto não tem
 
+> **Nota (2026-09-11):** as §0 e §1 descrevem o compositor como Remotion, como estava na data deste registro. A troca pelo HyperFrames — e a remoção de `apps/studio` — está documentada na §9; leia-a antes de tomar o texto abaixo como estado atual.
+
 Este é um documento de **arquitetura de software**: quais módulos existem, quem
 fala com quem, em que formato os dados trafegam. "Design" aqui tem o mesmo sentido
 que em "design de API". Não há nesta spec nenhuma decisão visual, e o projeto não

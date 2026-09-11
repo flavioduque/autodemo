@@ -1,6 +1,6 @@
 ---
 name: demomotion
-description: Autonomously create polished product demo videos by operating a web application through the DemoMotion MCP server — recording a deterministic capture, compiling an editable project, cutting dead time, writing word-by-word narration, and rendering the final MP4 with the HyperFrames compositor.
+description: Autonomously create polished product demo videos by operating a web application through the DemoMotion MCP server — one demo_create call from a URL, an explicit step list and a pacing preset to a finished MP4; or step by step, recording a deterministic capture, compiling an editable project, cutting dead time, writing word-by-word narration, and rendering with the HyperFrames compositor.
 ---
 
 # DemoMotion Agent Skill
@@ -11,15 +11,43 @@ re-rendered without recording again.
 
 ## The pipeline
 
+**The primary path is one call.** Once you know the URL, the steps and the
+pacing (sections 1–3), `demo_create` runs the whole pipeline and answers with
+the MP4:
+
+```
+demo_create({ url, title, steps: [...], pacing, captions: "auto" })
+  = session_start → goto(url) → each step → session_stop
+  → project_build → project_update(preset) → render_video
+  → { video, project, capture, durationMs, blockedRequests, sessionId, pacing }
+```
+
+It takes an **explicit step list** — `click`, `fill`, `scroll`, `keypress`,
+`wait`, `goto` — and does no planning of its own. The pacing preset fills in
+every number a step does not name (section 2). `captions: "auto"` keeps the
+skeleton seeded from your step labels; when the prose needs work, rewrite it
+with `project_update` on the returned `project` and re-render with
+`render_video` — no second recording.
+
+The granular tools are the same pipeline taken one call at a time:
+
 ```
 session_start → browser_goto / click / fill / wait → session_stop
              → project_build → (project_update)* → render_video
 ```
 
-`demo_finalize` collapses `session_stop → project_build → render_video` into one
-call on a live session. Use it only for a throwaway or a smoke check: it renders
-the automatic first pass, so no cuts and no rewritten narration. Any demo meant
-for a human goes through `project_update` at least once.
+Use them to find selectors (`browser_inspect` on a live session), to debug a
+step that failed inside `demo_create` (its error names the step), to retry
+from a checkpoint, and for the editing pass and partial re-renders. `demo_finalize`
+collapses `session_stop → project_build → render_video` on a live granular
+session; like `demo_create` it renders the automatic first pass.
+
+When `demo_create` fails half-way — a selector that matches nothing, a
+navigation the network policy refuses, a timeout, a render error — the session
+is always stopped (no browser is left behind) and the error body names the
+step: `stage`, `step {index, action, selector | url, label}`, `cause`, and the
+`capture` recorded up to that point (plus `project` when the build had already
+happened). See *Errors* below.
 
 The compositor is **HyperFrames** (HTML + GSAP, rendered to H.264). You never
 author it. You author `project.json`.
@@ -79,11 +107,20 @@ which you recommend for their stated objective:
 | **Tutorial** | ~40 s | Onboarding, support, docs — the viewer will REPRODUCE the steps. |
 | **Social / ad** | ~15 s | Autoplay without sound, in a **vertical** feed. Only the climax survives. |
 
-Then apply the preset's numbers. These are the knobs, not decoration:
+Then apply the preset's numbers. These are the knobs, not decoration. The table
+is the **shared source**: it is rendered from `PACING_PRESETS` in
+`apps/mcp-server/src/pacing.ts`, and a test fails whenever the two differ. Pass
+the preset's name as `pacing` to `demo_create` and it applies the rows marked
+with a tool name itself — `typeDelayMs` on every fill (social: the first field
+only), the wait after a navigation (the opening one, every `goto`, and a click
+that changes the URL), the wait between fields, the hold on the final result,
+the caption hold, `cutTransitionMs`, and the `output` frame. The reading pause
+on a new screen is a `wait` step you place; speed ramps are an `editList` you
+send afterwards with `project_update`.
 
 | Knob | Product demo | Tutorial | Social |
 |---|---|---|---|
-| `output` frame on `project_update` | omit (the capture's own frame) | omit | `{"width": 1080, "height": 1920}` — a 16:9 file fits no feed |
+| `output` frame on `project_update` | omit (the capture's own frame) | omit (the capture's own frame) | `{"width": 1080, "height": 1920}` — a 16:9 file fits no feed |
 | `typeDelayMs` on `browser_fill` | 40 | 55 | 30, and only on the first field |
 | `browser_wait` after a navigation | 1200 ms | 2000 ms | 700 ms |
 | `browser_wait` between fields | 900 ms | 1500 ms | 300 ms |
@@ -106,6 +143,28 @@ Each scene: purpose · action · expected visible state · rough duration.
 A demo with more than seven scenes is two demos.
 
 ## 4. Record
+
+With `demo_create`, recording is the `steps` array — the same actions as the
+tools below, one object each, in order:
+
+```json
+{"url": "http://localhost:3000/signup", "title": "Saltmarsh signup", "pacing": "product-demo",
+ "steps": [
+   {"action": "fill",  "selector": "[data-testid=\"signup-name-input\"]", "value": "Inês Corvelo", "label": "Your name opens the workspace"},
+   {"action": "fill",  "selector": "[data-testid=\"signup-email-input\"]", "value": "ines@studio.com", "label": "One e-mail, no verification step"},
+   {"action": "click", "selector": "[data-testid=\"signup-terms-checkbox\"]", "label": "Agree to the terms"},
+   {"action": "wait",  "ms": 600},
+   {"action": "click", "selector": "[data-testid=\"signup-submit\"]", "label": "The workspace is ready"},
+   {"action": "wait",  "ms": 1200}
+ ]}
+```
+
+Every rule below applies to those steps exactly as it applies to the tools.
+Two things only the step list needs: put a `wait` between two labelled actions
+that would otherwise land on the same frame (a label whose successor arrives at
+the same instant gets no caption line), and let the preset supply the waits you
+would otherwise send by hand — a `wait` you place next to a `fill` or a `goto`
+replaces the preset's, it does not add to it.
 
 `session_start` — defaults `1920x1080`, `headless: false` for local production.
 Returns `sessionId`; every browser tool needs it.
@@ -324,11 +383,31 @@ capture itself is wrong.
 Every tool answers with a JSON body. A failure comes back as a normal result with
 `isError: true` and a text message — read it, do not just retry.
 
+- `demo_create` fails with a JSON body, never a bare string:
+
+  ```json
+  {"error": "demo_create failed at step 3 (click \"[data-testid=\\\"signup-terms\\\"]\"): locator.boundingBox: Timeout 30000ms exceeded. …",
+   "stage": "step", "step": {"index": 3, "action": "click", "selector": "[data-testid=\"signup-terms\"]", "label": "Agree to the terms"},
+   "cause": "locator.boundingBox: Timeout 30000ms exceeded. …",
+   "sessionId": "…", "blockedRequests": [],
+   "capture": "…/sessions/…/capture.json"}
+  ```
+
+  `stage` is `open` (the first navigation), `step` (one of yours — `index` is
+  its position in `steps`, a fill's `value` is never echoed), `stop`, `build`,
+  `update` or `render`. `cause` is the underlying message — the network policy's
+  own when that is why. `capture` is present whenever the recording up to the
+  failure could be assembled; `project` too when the failure came after the
+  build, so a render failure loses nothing. The session is already gone: fix the
+  step and call `demo_create` again, or reproduce the flow with the granular
+  tools to inspect the page at the failing step.
+
 - `Input validation error: …` — your arguments broke the tool's schema. The
   message names the field and the bound (e.g. `zooms.0.scale: Too big: expected
   number to be <=3`). Fix the argument; nothing was written.
-- `Unknown session: <id>` — the session was already stopped (`session_stop` and
-  `demo_finalize` both end it) or never existed.
+- `Unknown session: <id>` — the session was already stopped (`session_stop`,
+  `demo_finalize` and a finished or failed `demo_create` all end it) or never
+  existed.
 - `Cannot render: the project's edit list keeps no material` — your `editList`
   cut everything.
 - `DemoMotion refused <url>: "<host:port>" is not in DEMOMOTION_ALLOWED_HOSTS

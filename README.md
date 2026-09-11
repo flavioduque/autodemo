@@ -93,40 +93,45 @@ Two design decisions do the heavy lifting:
 
 ## Quick start
 
-Requires **Node.js 22+** and **pnpm 10**.
-
-```bash
-pnpm install
-pnpm --filter @demomotion/mcp-server exec playwright install chromium
-pnpm typecheck && pnpm test && pnpm build
-```
-
-> The Playwright install **must** be scoped with `--filter`. Playwright is a dependency of `apps/mcp-server`, not the workspace root; a bare `pnpm exec playwright ...` can fall through to an unrelated Playwright on `PATH` and provision the wrong browser cache.
-
-Point your MCP client at the `tsx` entry directly (not `pnpm dev:mcp` — pnpm prints a banner on stdout, and an MCP stdio transport needs stdout to carry JSON-RPC only):
+Requires **Node.js 22+**, **ffmpeg** on `PATH`, and a Chromium. Add to your MCP client:
 
 ```json
 {
   "mcpServers": {
     "demomotion": {
-      "command": "/abs/path/demomotion-mcp/apps/mcp-server/node_modules/.bin/tsx",
-      "args": ["/abs/path/demomotion-mcp/apps/mcp-server/src/index.ts"],
-      "cwd": "/abs/path/demomotion-mcp",
+      "command": "npx",
+      "args": ["-y", "demomotion"],
       "env": { "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1" }
     }
   }
 }
 ```
 
-On a host where Playwright has no bundled Chromium build (e.g. macOS 13), drive a locally installed browser instead — no downgrade, no download:
+The first run downloads the package and its renderer (~400 MB, dominated by HyperFrames' `onnxruntime-node`). If the server logs `no usable capture browser`, either install Playwright's Chromium (`npx playwright@1.63.0 install chromium`) or drive an installed browser with `"env": { "DEMOMOTION_BROWSER_CHANNEL": "chrome" }` — required on macOS 13, which has no bundled build.
 
-```bash
-DEMOMOTION_BROWSER_CHANNEL=chrome pnpm dev:mcp
+Sessions, captures and renders are written under `~/.demomotion/sessions/` (override with `DEMOMOTION_HOME`); every tool result returns the absolute path. `demomotion render project.json --out demo.mp4` re-renders an edited project from the shell.
+
+The whole pipeline is one call:
+
+```json
+{ "tool": "demo_create", "arguments": {
+  "url": "http://localhost:3000/signup", "title": "Signup", "pacing": "product-demo",
+  "steps": [
+    { "action": "fill",  "selector": "[data-testid=\"name\"]",   "value": "Inês Corvelo",   "label": "Your name opens the workspace" },
+    { "action": "fill",  "selector": "[data-testid=\"email\"]",  "value": "ines@studio.com", "label": "One e-mail, no verification step" },
+    { "action": "click", "selector": "[data-testid=\"submit\"]", "label": "The workspace is ready" },
+    { "action": "wait",  "ms": 1200 }
+  ] } }
+→ { "video": "…/final.mp4", "project": "…/project.json", "capture": "…/capture.json", "durationMs": 9800, … }
 ```
+
+Pass `"pacing": "social"` and the same steps come out 1080×1920. A step that fails returns `isError` with the step index, selector and cause, the capture recorded so far, and no browser left running.
+
+Contributors: `pnpm install && pnpm --filter demomotion exec playwright install chromium && pnpm typecheck && pnpm test && pnpm build`; `pnpm dev:mcp` runs the server from source.
 
 ## The MCP tool surface
 
-The agent sees granular, auditable tools — not a black box — so any run can be debugged, retried or partially re-rendered.
+The agent sees granular, auditable tools — not a black box — and `demo_create` composes them into one call — so any run can be debugged, retried or partially re-rendered.
 
 | Tool | Purpose |
 |---|---|
@@ -139,6 +144,7 @@ The agent sees granular, auditable tools — not a black box — so any run can 
 | `project_build` | Compile a capture into an editable project + auto-zoom regions |
 | `project_update` | Edit style, zooms, the edit list (cuts + speed ramps) and callouts — no re-recording |
 | `render_video` | Render the final H.264 MP4 |
+| `demo_create` | **One call → MP4**: URL + explicit step list + pacing preset; runs the whole pipeline, fails with the step named and the capture kept |
 | `demo_finalize` | Stop → compile → render in one call |
 
 An agent skill in [`skills/demomotion/SKILL.md`](./skills/demomotion/SKILL.md) tells the model *how* to use them: objective analysis, scene planning, capture, editing heuristics, render, validation.
@@ -197,5 +203,3 @@ Issues and PRs are welcome. The test discipline is strict on purpose: every beha
 ## License
 
 DemoMotion source: **MIT**. The HyperFrames compositor on the render path is Apache-2.0. Both are permissive — DemoMotion adds no per-seat cost for the teams that adopt it.
-
-> `apps/studio` still contains the superseded Remotion composition (no longer on the render path). Remotion carries its own commercial licensing terms; it will be removed, and until then you can delete `apps/studio` if you prefer a Remotion-free tree.

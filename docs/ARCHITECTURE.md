@@ -2,25 +2,24 @@
 
 ## Goal
 
-An AI agent owns the full product-demo workflow: inspect a web app, plan a concise journey, operate it, record it, convert interactions into an editable timeline, apply creative treatment, render with Remotion, and validate the output.
+An AI agent owns the full product-demo workflow: inspect a web app, plan a concise journey, operate it, record it, convert interactions into an editable timeline, apply creative treatment, render with HyperFrames, and validate the output.
 
 ## Control flow
 
-AI client → MCP v2 → capture adapter → immutable raw assets + event stream → project compiler → editable `project.json` → Remotion → MP4.
+AI client → MCP v2 → capture adapter → immutable raw assets + event stream → project compiler → editable `project.json` → `@demomotion/compositor` (HyperFrames HTML) → `hyperframes render` → MP4.
 
 ## Stable MCP surface
 
 Capture backends must be replaceable without changing the agent-facing contract.
 
 Current backend: Playwright video capture.
-Planned high-fidelity backend: Remotion Canvas Capture for supported web workflows.
 Future backend: native desktop capture for macOS/Windows/Linux.
 
 ## Source-of-truth rule
 
 Capture facts once; make creative decisions later.
 
-Raw recording and action metadata are source assets. Zoom, framing, callouts, captions, titles, transitions, audio treatment and voiceover belong to the Remotion composition layer.
+Raw recording and action metadata are source assets. Zoom, framing, callouts, captions, titles, transitions, audio treatment and voiceover belong to the composition layer: `packages/compositor` turns `project.json` into a HyperFrames HTML composition, and `apps/mcp-server` drives the `hyperframes` CLI to render it.
 
 ## Security
 

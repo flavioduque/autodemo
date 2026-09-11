@@ -5,8 +5,8 @@
   "packageManager": "pnpm@10.17.1",
   "scripts": {
     "build": "pnpm -r --no-bail build",
-    "dev:mcp": "pnpm --filter @demomotion/mcp-server dev",
-    "studio": "pnpm --filter @demomotion/studio studio",
+    "dev:mcp": "pnpm --filter demomotion dev",
+    "test:pack": "pnpm --filter demomotion test:pack",
     "typecheck": "pnpm -r --no-bail typecheck",
     "test": "pnpm -r --no-bail --if-present test",
     "fixture": "node fixtures/target-app/server.mjs",

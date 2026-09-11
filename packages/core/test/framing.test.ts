@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { DemoAction } from "@demomotion/schema";
+import { type DemoAction, sourceMs, SOURCE_ZERO, ZERO_MS } from "@demomotion/schema";
 import { referenceCrop, framingTrack, framingCentreAt, framingRectAt } from "../src/index.ts";
 
 /**
@@ -10,7 +10,7 @@ import { referenceCrop, framingTrack, framingCentreAt, framingRectAt } from "../
  */
 
 const action = (id: string, atMs: number, x: number, y: number, type: DemoAction["type"] = "click"): DemoAction => ({
-  id, type, atMs, durationMs: 0, x, y
+  id, type, atMs: sourceMs(atMs), durationMs: ZERO_MS, x, y
 });
 
 const LANDSCAPE = { width: 1920, height: 1080 };
@@ -40,7 +40,7 @@ test("the framing track is one keyframe per positioned interaction, in source or
   const track = framingTrack([
     action("a3", 7200, 0.51, 0.91),
     action("a1", 1200, 0.82, 0.18),
-    { id: "nav", type: "goto", atMs: 0, durationMs: 0, url: "https://example.test" },
+    { id: "nav", type: "goto", atMs: SOURCE_ZERO, durationMs: ZERO_MS, url: "https://example.test" },
     action("a2", 3400, 0.24, 0.63, "fill")
   ]);
 
@@ -60,33 +60,33 @@ test("the crop centre eases between actions instead of snapping to one of them",
 
   // At each action instant the centre IS that action: the element being clicked
   // is dead centre when it is clicked.
-  assert.deepEqual(framingCentreAt(track, 1000), { x: 0.2, y: 0.1 });
-  assert.deepEqual(framingCentreAt(track, 3000), { x: 0.8, y: 0.9 });
+  assert.deepEqual(framingCentreAt(track, sourceMs(1000)), { x: 0.2, y: 0.1 });
+  assert.deepEqual(framingCentreAt(track, sourceMs(3000)), { x: 0.8, y: 0.9 });
 
   // Half-way between them the centre is half-way between them — strictly inside
   // the open interval, which is what "moves smoothly" means and what snapping
   // to either endpoint would violate.
-  const mid = framingCentreAt(track, 2000);
+  const mid = framingCentreAt(track, sourceMs(2000));
   assert.equal(mid.x, 0.5);
   assert.equal(mid.y, 0.5);
   assert.ok(mid.x > 0.2 && mid.x < 0.8, `crop centre snapped to an endpoint: ${mid.x}`);
 
   // A quarter of the way in, hand-computed from smoothstep 3u^2 - 2u^3 at
   // u = 0.25: 3*0.0625 - 2*0.015625 = 0.15625, so x = 0.2 + 0.6*0.15625.
-  assert.ok(Math.abs(framingCentreAt(track, 1500).x - 0.29375) < 1e-12);
+  assert.ok(Math.abs(framingCentreAt(track, sourceMs(1500)).x - 0.29375) < 1e-12);
 
   // Smoothstep's derivative is zero at both ends, so the camera DWELLS on an
   // action instead of leaving the instant it is clicked: 5% of the way through
   // the gap it has travelled less than 2% of the distance.
-  const justAfter = framingCentreAt(track, 1100);
+  const justAfter = framingCentreAt(track, sourceMs(1100));
   assert.ok(justAfter.x - 0.2 < 0.6 * 0.02, `the camera bolts off the click: ${justAfter.x}`);
 
   // Outside the track it holds the nearest keyframe rather than drifting away.
-  assert.deepEqual(framingCentreAt(track, 0), { x: 0.2, y: 0.1 });
-  assert.deepEqual(framingCentreAt(track, 99999), { x: 0.8, y: 0.9 });
+  assert.deepEqual(framingCentreAt(track, sourceMs(0)), { x: 0.2, y: 0.1 });
+  assert.deepEqual(framingCentreAt(track, sourceMs(99999)), { x: 0.8, y: 0.9 });
 
   // With nothing positioned to follow, the camera sits in the middle.
-  assert.deepEqual(framingCentreAt([], 500), { x: 0.5, y: 0.5 });
+  assert.deepEqual(framingCentreAt([], sourceMs(500)), { x: 0.5, y: 0.5 });
 });
 
 test("the crop never leaves the source frame, even for an action against the edge", () => {
@@ -95,11 +95,11 @@ test("the crop never leaves the source frame, even for an action against the edg
 
   // Control: an action in the middle of the frame is NOT clamped — so the
   // clamping asserted below is a real change and not the only behaviour there is.
-  const centred = framingRectAt(framingTrack([action("m", 0, 0.5, 0.5)]), size, 0);
+  const centred = framingRectAt(framingTrack([action("m", 0, 0.5, 0.5)]), size, SOURCE_ZERO);
   assert.ok(Math.abs(centred.x - (0.5 - crop.width / 2)) < 1e-12, `a centred action was moved: ${centred.x}`);
 
   for (const [x, y] of [[0.98, 0.5], [0.01, 0.5], [0.5, 0.99], [0.5, 0.0]] as const) {
-    const rect = framingRectAt(framingTrack([action("e", 0, x, y)]), size, 0);
+    const rect = framingRectAt(framingTrack([action("e", 0, x, y)]), size, SOURCE_ZERO);
     assert.ok(rect.x >= -1e-12 && rect.y >= -1e-12, `crop starts outside the source: ${JSON.stringify(rect)}`);
     assert.ok(rect.x + rect.width <= 1 + 1e-12, `crop runs past the right edge: ${JSON.stringify(rect)}`);
     assert.ok(rect.y + rect.height <= 1 + 1e-12, `crop runs past the bottom edge: ${JSON.stringify(rect)}`);

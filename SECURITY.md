@@ -63,15 +63,29 @@ Semantics, in order of what an operator needs to know:
 - **Service workers are blocked** in the recording context: their fetches bypass
   request interception, so the policy could not see them.
 
-What is enforced where — every request goes through **one** policy, at three
+What is enforced where — every request goes through **one** policy, at two
 hooks, because no single hook sees everything:
 
-1. Playwright `context.route("**/*")`: navigations (`browser_goto`, a click on a
-   link, `window.open`), fetch/XHR, scripts, images, iframes — in every page,
-   frame and worker of the context.
-2. A raw CDP `Fetch` session per page: **HTTP redirect hops**, which Playwright's
-   route never sees (playwright-core 1.63 auto-continues them).
-3. Playwright `context.routeWebSocket("**/*")`: WebSocket handshakes.
+1. A raw CDP `Fetch` session on the **browser target**, deciding **every
+   http(s) request of every target** — the page, a cross-process `<iframe>`
+   (its own target under site isolation), an iframe nested inside it, a popup,
+   a dedicated or shared worker — from the network layer of the browser
+   process, so a new target is covered before its first request goes out.
+   Navigations (`browser_goto`, a click on a link, `window.open`), fetch/XHR,
+   scripts, images, iframes and **HTTP redirect hops** all surface here.
+   Redirect hops are Playwright's blind spot (playwright-core 1.63
+   auto-continues them), and this layer judges every request, not only the ones
+   Chromium marks as a hop: a cross-origin 302 on a `fetch()`/XHR is restarted
+   by Chromium as an unmarked fresh request, and a layer that only looked at
+   marked hops let it through.
+2. Playwright `context.routeWebSocket("**/*")`: WebSocket handshakes, which the
+   Fetch domain does not intercept.
+
+(Earlier versions also ran Playwright's `context.route` as an http(s) layer;
+it was removed because it and the browser-target Fetch session, both
+intercepting one keepalive request, could deadlock a page load — and the Fetch
+session is strictly more capable, seeing shared-worker requests `context.route`
+did not.)
 
 A refused **navigation** fails the tool call with a message naming the host,
 the port and the variable to set, and the page stays where it was (no
@@ -80,17 +94,35 @@ aborted silently for the page (a rejected `fetch`) and recorded; `session_status
 and `session_stop` report `blockedRequests` (`kind`, `url`, `host`, `port`,
 `reason`, `message`, `atMs`) so an agent can see that something was denied.
 
+Closed in this version, each one reproduced against a real browser before the
+fix and kept as a test (`apps/mcp-server/test/network-route.test.ts`):
+
+- a redirect hop issued **inside a cross-process `<iframe>`**, and inside an
+  iframe nested in that one, to a listed host on an unlisted port;
+- a `window.open` popup to an allowed host whose **first response is a 302** to
+  an unlisted port — the popup used to land on it before any per-page guard
+  could attach;
+- a `fetch()`/XHR **on the main page** answered with a 302 to an unlisted port
+  (the unmarked-hop case above).
+
 Known residual, stated precisely:
 
-- A redirect hop that starts **inside a cross-process `<iframe>`** is seen by
-  neither hook 1 (Playwright continues redirect hops itself) nor hook 2 (the
-  page-level CDP session does not see that frame's requests). The resolver
-  rules still stop it at **host** granularity (an unlisted host cannot
-  resolve); a redirect to a listed host on an unlisted **port** from inside such
-  a frame is not caught.
 - Pinning is per listed name and per session; an operator who restarts the
   session re-resolves. There is no window between our lookup and the browser's
   for listed names (the browser does not look them up at all), and unlisted
   names cannot be looked up by the browser.
+- The `kind` label of a blocked hop is `redirect` when Chromium marks the hop
+  or when its network request id was seen on an earlier request (the last
+  4096 are remembered); past that, the hop is still refused but labelled
+  `subresource`.
+- **WebTransport / HTTP-3 (QUIC over UDP)** is not intercepted by the Fetch
+  domain, which is http(s) only. An unlisted **host** is still stopped (the
+  resolver makes it unresolvable), but a **listed host on an unlisted port**
+  reached over WebTransport is not port-filtered — QUIC `Initial` packets do
+  leave to that port (verified by execution: a `new WebTransport(...)` to a
+  listed host on an unlisted port put 4 UDP packets on the wire, with no HTTP
+  server involved). This is the same port-granular shape as the old OOPIF gap,
+  over a protocol the interception layer does not see. Blocking it would take a
+  separate mechanism (e.g. disabling the WebTransport/QUIC features at launch).
 
 Report vulnerabilities privately to the repository maintainer rather than filing a public issue with exploit details.

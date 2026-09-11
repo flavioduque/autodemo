@@ -25,7 +25,7 @@ export interface PreflightOptions {
 export interface PreflightReport {
   warnings: string[];
   /** What `session_start` will launch, as far as can be told without launching it. */
-  browser: "bundled" | "channel" | "unverified" | "missing";
+  browser: "bundled" | "channel" | "executable" | "unverified" | "missing";
   ffmpeg: boolean;
   ffprobe: boolean;
 }
@@ -115,7 +115,19 @@ export async function preflight(options: PreflightOptions = {}): Promise<Preflig
   // --- capture browser ----------------------------------------------------
   let browser: PreflightReport["browser"];
   const channel = env.DEMOMOTION_BROWSER_CHANNEL?.trim();
-  if (channel) {
+  const executable = env.DEMOMOTION_BROWSER_EXECUTABLE?.trim();
+  if (executable) {
+    // A specific binary wins over a channel and over the bundled build (the
+    // launch gives it the same precedence), so it is the only thing to check.
+    if (await exists(executable)) {
+      browser = "executable";
+    } else {
+      browser = "missing";
+      warnings.push(
+        `no usable capture browser: DEMOMOTION_BROWSER_EXECUTABLE is set but ${executable} does not exist; fix the path or unset it, ${BROWSER_FIXES}`
+      );
+    }
+  } else if (channel) {
     const candidatesFor = options.channelCandidates ?? defaultChannelCandidates;
     const candidates = candidatesFor(channel, process.platform, env);
     if (candidates.length > 0) {

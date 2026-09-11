@@ -61,7 +61,18 @@ export interface Session {
   /** The most recent `BLOCKED_REQUESTS_KEPT` blocks; `blockedCount` is the true total. */
   blockedRequests: BlockedRequest[];
   blockedCount: number;
+  /**
+   * Chromium's id for the page's main frame — stable for the life of the tab,
+   * across navigations. `goto` uses it to tell a block of ITS navigation apart
+   * from one inside an iframe or a popup.
+   */
+  mainFrameId?: string;
+  /** Called with every block as it is recorded; `goto` listens while it waits. */
+  blockListeners: Set<BlockListener>;
 }
+
+/** `documentFrameId`: set only when the blocked request was a frame's DOCUMENT load — the frame it would have navigated. */
+type BlockListener = (record: BlockedRequest, documentFrameId: string | undefined) => void;
 
 const sessions = new Map<string, Session>();
 
@@ -100,12 +111,25 @@ function nowSourceMs(s: Session): SourceTimeMs {
  * By default Playwright's bundled Chromium is used so CI stays deterministic.
  * Setting DEMOMOTION_BROWSER_CHANNEL (e.g. "chrome" or "msedge") makes Playwright
  * drive a locally installed browser instead — useful on hosts where the bundled
- * Chromium build is unavailable.
+ * Chromium build is unavailable. DEMOMOTION_BROWSER_EXECUTABLE names one
+ * specific binary and wins over both: it is how the suite is run against the
+ * `chrome-headless-shell` CI drives, on a host where it is not a channel.
  */
 async function launchBrowser(headless: boolean, args: string[]): Promise<Browser> {
   const channel = process.env.DEMOMOTION_BROWSER_CHANNEL?.trim() || undefined;
+  const executablePath = process.env.DEMOMOTION_BROWSER_EXECUTABLE?.trim() || undefined;
   try {
-    return await chromium.launch(channel ? { headless, channel, args } : { headless, args });
+    return await chromium.launch({
+      headless,
+      args,
+      ...(channel ? { channel } : {}),
+      // A specific binary wins over a channel: it exists so the suite can be
+      // pointed at a Chromium build that is not installed as a channel (the
+      // headless-shell that CI's Playwright downloads, say) on a host where the
+      // bundled build cannot run. Playwright itself gives executablePath
+      // precedence over channel.
+      ...(executablePath ? { executablePath } : {})
+    });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const hint = channel
@@ -119,22 +143,45 @@ async function launchBrowser(headless: boolean, args: string[]): Promise<Browser
 // Network policy enforcement
 // ---------------------------------------------------------------------------
 //
-// ONE policy (`NetworkPolicy`), enforced at THREE points, because no single
-// hook in Playwright sees every request:
+// ONE policy (`NetworkPolicy`), enforced at TWO points, because no single hook
+// sees every request:
 //
-//  1. `context.route("**/*")` — every request Playwright intercepts, in every
-//     page, frame and worker of the context: navigations (from `goto`, a click,
-//     `window.open`), fetch/XHR, images, scripts, iframes. Verified NOT to see
-//     HTTP redirect hops: playwright-core 1.63 auto-continues a redirected
-//     request before any user route runs.
-//  2. A raw CDP `Fetch` session per page — Chromium pauses redirect hops there
-//     too, so this is where a 302 to a forbidden host is stopped. Verified to
-//     miss requests issued from inside a cross-process <iframe>, which (1) does
-//     see; a redirect hop that starts inside such a frame is the one case
-//     neither layer catches at PORT granularity (the resolver rules below still
-//     stop it at host granularity).
-//  3. `context.routeWebSocket("**/*")` — WebSocket handshakes, which neither
-//     (1) nor (2) intercept.
+//  1. A raw CDP `Fetch` session on the BROWSER target (`installHttpGuard`),
+//     deciding EVERY http(s) request of EVERY target in the browser — the
+//     page, a cross-process <iframe> (its own target under site isolation), an
+//     iframe nested inside that one, a popup, a dedicated or shared worker —
+//     from the network layer in the browser process. A new target is therefore
+//     covered before its first request goes out, with nothing to install per
+//     target. Navigations, fetch/XHR, images, scripts, iframes AND redirect
+//     hops all surface here. This is the whole enforcement surface for http(s);
+//     it is deliberately the ONLY one (see below).
+//  2. `context.routeWebSocket("**/*")` (`installWebSocketGuard`) — WebSocket
+//     handshakes, which the Fetch domain does not intercept.
+//
+// Why a BROWSER-target Fetch session, and why it is the only http(s) layer —
+// all verified by execution (Chrome 152, playwright-core 1.63):
+//   - A `Fetch` session attached to a PAGE (`context.newCDPSession(page)`) sees
+//     that one target; an out-of-process iframe's requests never reach it, so a
+//     redirect hop issued inside an OOPIF escaped it at PORT granularity (the
+//     resolver rules below still stopped it at HOST granularity). Playwright
+//     already auto-attaches to OOPIFs on its own internal sessions, but not on
+//     a session the user opens. The browser-target session sees them all.
+//   - A popup (`window.open`) is a new target whose first navigation — and a
+//     302 answering it — goes out before Playwright reports the popup to a
+//     `context.on("page")` handler, so a per-page guard attached there is too
+//     late. The browser session is already watching when the popup is created.
+//   - `context.route` (Playwright's own page-level interception) was the first
+//     http(s) layer here. Kept ALONGSIDE the browser Fetch session, the two
+//     intercepting the same keepalive request (a `sendBeacon` whose response
+//     redirects) deadlock the load — `goto` hangs to its timeout even though
+//     the forbidden host is never reached. The browser Fetch session alone has
+//     no such interaction and is strictly more capable (it also sees shared-
+//     worker requests, which `context.route` did not), so it replaced it.
+//   - A redirect hop is NOT reliably marked as one. A cross-origin 302 on a
+//     fetch()/XHR is restarted by Chromium's CORS loader as a fresh request
+//     with no `redirectedRequestId` (an <img> or a navigation hop IS marked).
+//     So this layer decides EVERY request it sees, and uses the mark — plus a
+//     memory of recently seen network ids — only to LABEL a block `redirect`.
 //
 // Underneath, Chromium's own resolver is closed with `--host-resolver-rules`
 // (see `NetworkPolicy.chromiumArgs`): unlisted hostnames and literals cannot
@@ -142,7 +189,7 @@ async function launchBrowser(headless: boolean, args: string[]): Promise<Browser
 // covers service workers (also blocked outright) and anything else that bypasses
 // interception, at host granularity.
 
-function recordBlock(s: Session, decision: Extract<Decision, { allowed: false }>, kind: BlockedRequest["kind"]): BlockedRequest {
+function recordBlock(s: Session, decision: Extract<Decision, { allowed: false }>, kind: BlockedRequest["kind"], documentFrameId?: string): BlockedRequest {
   const record: BlockedRequest = {
     seq: ++s.blockedCount,
     url: decision.url,
@@ -155,38 +202,15 @@ function recordBlock(s: Session, decision: Extract<Decision, { allowed: false }>
   };
   s.blockedRequests.push(record);
   if (s.blockedRequests.length > BLOCKED_REQUESTS_KEPT) s.blockedRequests.shift();
+  for (const listener of s.blockListeners) listener(record, documentFrameId);
   return record;
 }
 
 /**
- * Stops a request the policy refused.
- *
- * A NAVIGATION is aborted with `aborted` (net::ERR_ABORTED): Chromium treats
- * that as a cancelled navigation and stays on the current document — the
- * recording keeps showing the page, not a `chrome-error://` screen. Anything
- * else gets `blockedbyclient`, which is what an ad blocker returns and what
- * page code already knows how to handle (a rejected fetch).
+ * The WebSocket layer (point 2 above). The Fetch domain does not intercept a
+ * WebSocket handshake; Playwright's `routeWebSocket` does.
  */
-function abortReason(isNavigation: boolean) {
-  return isNavigation ? ("aborted" as const) : ("blockedbyclient" as const);
-}
-
-async function installRequestGuard(s: Session) {
-  await s.context.route("**/*", async (route, request) => {
-    const decision = await s.policy.check(request.url());
-    try {
-      if (decision.allowed) {
-        await route.continue();
-      } else {
-        const isNavigation = request.isNavigationRequest();
-        recordBlock(s, decision, isNavigation ? "navigation" : "subresource");
-        await route.abort(abortReason(isNavigation));
-      }
-    } catch {
-      // The page navigated away or closed while the request was paused.
-    }
-  });
-
+async function installWebSocketGuard(s: Session) {
   await s.context.routeWebSocket("**/*", async (ws) => {
     // The policy speaks http(s); a WebSocket is the same host:port over ws(s).
     const asHttp = ws.url().replace(/^ws(s?):/, "http$1:");
@@ -201,38 +225,80 @@ async function installRequestGuard(s: Session) {
 }
 
 /**
- * The redirect layer (point 2 above). Playwright's route never sees a redirect
- * hop, but Chromium's Fetch domain pauses it on every session that enabled
- * interception — so a second, raw session gets to decide. Non-redirect requests
- * are continued here untouched: the route layer already decided them, and a
- * second decision would record the same block twice.
+ * How many Network request ids the Fetch layer remembers, to recognise an
+ * unmarked redirect hop (see `installHttpGuard`). A page that makes more
+ * requests than this between a request and its hop only loses the LABEL
+ * (`redirect` becomes `subresource`); the hop is refused either way.
  */
-async function installRedirectGuard(s: Session, page: Page) {
-  let cdp: CDPSession;
-  try {
-    cdp = await s.context.newCDPSession(page);
-    await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
-  } catch {
-    return; // Page already gone.
+const NETWORK_IDS_REMEMBERED = 4096;
+
+/** A bounded set that forgets its oldest member first. */
+class RecentSet<T> {
+  private readonly items = new Set<T>();
+  constructor(private readonly capacity: number) {}
+  has(item: T): boolean { return this.items.has(item); }
+  add(item: T): void {
+    if (this.items.has(item)) return;
+    this.items.add(item);
+    if (this.items.size > this.capacity) {
+      const oldest = this.items.values().next().value as T;
+      this.items.delete(oldest);
+    }
   }
+}
+
+/**
+ * The http(s) layer (point 1 above): one CDP `Fetch` session on the browser
+ * target, deciding every http(s) request of every target.
+ *
+ * Labelling a block: a hop is `redirect` when Chromium marks it
+ * (`redirectedRequestId`) OR when its Network request id was already seen on
+ * an earlier request — Chromium keeps that id across the restart it performs
+ * for a cross-origin fetch()/XHR redirect, which is the hop it does not mark.
+ * A `Document` load is a `navigation` and is aborted (the page stays where it
+ * was, no `chrome-error://` frame); anything else is a `subresource`, failed as
+ * an ad blocker would (a rejected fetch the page already knows how to handle).
+ */
+async function installHttpGuard(s: Session) {
+  const cdp: CDPSession = await s.browser.newBrowserCDPSession();
+  const seen = new RecentSet<string>(NETWORK_IDS_REMEMBERED);
   cdp.on("Fetch.requestPaused", (event) => {
     const requestId = event.requestId;
-    if (!event.redirectedRequestId) {
-      cdp.send("Fetch.continueRequest", { requestId }).catch(() => {});
-      return;
-    }
+    const isHop = event.redirectedRequestId !== undefined || (event.networkId !== undefined && seen.has(event.networkId));
+    if (event.networkId !== undefined) seen.add(event.networkId);
     void s.policy.check(event.request.url).then(async (decision) => {
       if (decision.allowed) {
         await cdp.send("Fetch.continueRequest", { requestId });
         return;
       }
-      recordBlock(s, decision, "redirect");
       const isNavigation = event.resourceType === "Document";
+      // A fetch() from the page carries the page's frameId too: only a
+      // Document request names the frame it would have navigated.
+      recordBlock(s, decision, isHop ? "redirect" : isNavigation ? "navigation" : "subresource", isNavigation ? event.frameId : undefined);
       await cdp.send("Fetch.failRequest", { requestId, errorReason: isNavigation ? "Aborted" : "BlockedByClient" });
     }).catch(() => {
-      // Request already gone (page navigated or closed).
+      // Request already gone (target navigated or closed).
     });
   });
+  await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
+}
+
+/**
+ * The CDP id of a page's main frame. Chromium keeps it for the life of the
+ * tab (it names the frame tree node, not one document), and a `Fetch` event
+ * on the browser session carries the same id — so a Document request paused
+ * with this `frameId` is the page's OWN navigation, not an iframe's or a
+ * popup's. Read through a throwaway session: `Page.getFrameTree` needs no
+ * `Page.enable`.
+ */
+async function mainFrameId(page: Page): Promise<string> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { frameTree } = await cdp.send("Page.getFrameTree");
+    return frameTree.frame.id;
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
 }
 
 export async function startSession(opts: {
@@ -247,6 +313,20 @@ export async function startSession(opts: {
    * Tests inject both so they never touch the network.
    */
   network?: { allowedHosts?: string; lookup?: LookupFn };
+  /**
+   * Extra Chromium launch flags, appended AFTER the policy's own
+   * (`--host-resolver-rules`). A test seam, not a product knob: nothing in the
+   * product passes it, so the shipped launch flags are exactly the policy's.
+   *
+   * It exists for one reason. The OOPIF scenarios in `network-route.test.ts`
+   * are only meaningful if the cross-site <iframe> really lands in a separate
+   * TARGET — that is the path the browser-target `Fetch` guard exists to cover.
+   * Full Chrome isolates by default; Playwright's bundled
+   * `chromium_headless_shell` (what CI drives) does NOT, so those tests would
+   * silently exercise the same-process path. They pass `--site-per-process` so
+   * the precondition they assert can actually hold on either binary.
+   */
+  browserArgs?: string[];
 }) {
   const id = crypto.randomUUID();
   const dir = path.join(sessionsRoot(), id);
@@ -265,7 +345,7 @@ export async function startSession(opts: {
   });
   await policy.prepare();
 
-  const browser = await launchBrowser(opts.headless, policy.chromiumArgs());
+  const browser = await launchBrowser(opts.headless, [...policy.chromiumArgs(), ...(opts.browserArgs ?? [])]);
   const context = await browser.newContext({
     viewport: { width: opts.width, height: opts.height },
     deviceScaleFactor,
@@ -293,14 +373,17 @@ export async function startSession(opts: {
     actions: [],
     policy,
     blockedRequests: [],
-    blockedCount: 0
+    blockedCount: 0,
+    blockListeners: new Set()
   };
+  session.mainFrameId = await mainFrameId(page);
 
   // Guards go in before the first navigation can happen — and before the
-  // screencast, so nothing the capture does is ever outside the policy.
-  await installRequestGuard(session);
-  await installRedirectGuard(session, page);
-  context.on("page", (popup) => { void installRedirectGuard(session, popup); });
+  // screencast, so nothing the capture does is ever outside the policy. The
+  // http guard is browser-wide, so a popup or a cross-process frame created
+  // later is covered from its first request with nothing more to install.
+  await installHttpGuard(session);
+  await installWebSocketGuard(session);
 
   if (mode === "screencast") {
     session.capture = await ScreencastCapture.start({
@@ -334,15 +417,27 @@ export function captureTimeMs(id: string): SourceTimeMs {
 }
 
 /**
- * Navigates. The route layer is the authority; the check up front only spares
+ * Navigates. The http guard is the authority; the check up front only spares
  * the agent a navigation that would be aborted anyway, and gives it the
  * policy's own message instead of Playwright's `net::ERR_ABORTED`. A refusal
  * is recorded like any other block, so `session_status` shows it.
  *
- * When the navigation itself is stopped by the route or redirect layer (a 302
- * to a forbidden host, say), Playwright rejects with a generic network error;
- * that is translated back into the recorded block's message, which names the
- * host that was refused and the variable to set.
+ * When the navigation itself is stopped by the http guard (a 302 to a forbidden
+ * host, say), the navigation is over the moment the block is recorded — and
+ * this promise settles THEN, with the block's message (which names the host
+ * that was refused and the variable to set), by racing Playwright's navigation
+ * against the guard. It does not wait for Playwright to notice: how soon a
+ * Chromium build reports an aborted main-frame load back to Playwright's
+ * `goto` (and its `networkidle`) is that build's business, and a `goto` that
+ * can only settle when Playwright does is one that can sit on the navigation
+ * timeout — or past it, when the load never reports at all. Only a block of
+ * THIS page's own document load counts (`mainFrameId`): a refused fetch or
+ * XHR (even one answered with a redirect, which is labelled `redirect` too),
+ * an iframe or a popup stopped while the page loads are recorded, not thrown.
+ *
+ * Should Playwright reject first (the abort reached it before the guard's
+ * record, or the failure is unrelated), a block recorded during the call is
+ * still preferred over its generic network error.
  */
 export async function goto(id: string, url: string) {
   const s = getSession(id);
@@ -354,14 +449,26 @@ export async function goto(id: string, url: string) {
   const safeUrl = decision.url;
   const atMs = nowSourceMs(s);
   const blockedBefore = s.blockedCount;
+  let listener: BlockListener | undefined;
+  const stoppedByGuard = new Promise<never>((_, reject) => {
+    listener = (record, documentFrameId) => {
+      if (documentFrameId !== undefined && documentFrameId === s.mainFrameId) reject(new Error(record.message));
+    };
+    s.blockListeners.add(listener);
+  });
   try {
-    await s.page.goto(safeUrl, { waitUntil: "networkidle" });
+    const navigation = s.page.goto(safeUrl, { waitUntil: "networkidle" });
+    // Losing the race leaves this pending; whatever it settles to later is not news.
+    navigation.catch(() => {});
+    await Promise.race([navigation, stoppedByGuard]);
   } catch (error) {
     const blocked = s.blockedRequests.find(
       (b) => b.seq > blockedBefore && (b.kind === "navigation" || b.kind === "redirect")
     );
     if (blocked) throw new Error(blocked.message, { cause: error });
     throw error;
+  } finally {
+    if (listener) s.blockListeners.delete(listener);
   }
   s.actions.push({ id: crypto.randomUUID(), type: "goto", atMs, durationMs: spanMs(nowSourceMs(s), atMs), url: safeUrl });
 }

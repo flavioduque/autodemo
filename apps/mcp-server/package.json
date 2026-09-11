@@ -41,8 +41,8 @@
     "build": "tsc -p tsconfig.json --noEmit && node scripts/build.mjs",
     "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
-    "test": "node --import tsx --import ./test/setup-env.ts --test test/*.test.ts",
-    "test:pack": "node --import tsx --import ./test/setup-env.ts --test test/pack.test.ts"
+    "test": "node --import tsx --import ./test/setup-env.ts --test --test-force-exit test/*.test.ts",
+    "test:pack": "node --import tsx --import ./test/setup-env.ts --test --test-force-exit test/pack.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",

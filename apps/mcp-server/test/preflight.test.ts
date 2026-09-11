@@ -54,6 +54,37 @@ test("preflight checks the channel binary when DEMOMOTION_BROWSER_CHANNEL is set
   assert.equal(present.warnings.filter((w) => /Chromium|channel/i.test(w)).length, 0, JSON.stringify(present.warnings));
 });
 
+test("a channel Playwright ships only on OTHER platforms is reported missing, by name", async () => {
+  // pack.test.ts asks for "msedge-canary" as a channel that cannot exist. On
+  // macOS and Windows the table knows where it would live, finds nothing and
+  // warns. On Linux there is no Edge Canary AT ALL — Playwright has no such
+  // build there — so the table has no entry, and CI run 34604186469 got
+  // "unverified" and silence instead of the warning. A channel the table knows
+  // on another platform but not on this one is missing here, not unknown.
+  const elsewhere = await preflight({
+    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_CHANNEL: "msedge-canary" },
+    bundledExecutable: "/definitely/not/here",
+    channelCandidates: (_channel, platform) => platform === process.platform ? [] : ["/elsewhere/Microsoft Edge Canary"]
+  });
+  assert.equal(elsewhere.browser, "missing");
+  const warning = elsewhere.warnings.find((w) => /channel "msedge-canary"/.test(w));
+  assert.ok(warning, JSON.stringify(elsewhere.warnings));
+  assert.match(warning, /^no usable capture browser: /);
+  assert.match(warning, new RegExp(`not available on ${process.platform}`));
+  assert.match(warning, /npx playwright@1\.63\.0 install chromium/);
+  assert.match(warning, /DEMOMOTION_BROWSER_CHANNEL=chrome/);
+  assert.equal(warning.includes("\n"), false);
+  // ...and the other half stands: a channel NO platform's table knows is still
+  // "unverified" and silent — preflight is a warning, not a second registry.
+  const unknown = await preflight({
+    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_CHANNEL: "my-fork" },
+    bundledExecutable: "/definitely/not/here",
+    channelCandidates: () => []
+  });
+  assert.equal(unknown.browser, "unverified");
+  assert.equal(unknown.warnings.filter((w) => /Chromium|channel|browser/i.test(w)).length, 0, JSON.stringify(unknown.warnings));
+});
+
 test("preflight warns about ffmpeg only when it is really absent from PATH", async () => {
   const without = await preflight({ env: { PATH: "/definitely/not/here" }, bundledExecutable: process.execPath });
   const warning = without.warnings.find((w) => /ffmpeg/.test(w));
@@ -61,10 +92,31 @@ test("preflight warns about ffmpeg only when it is really absent from PATH", asy
   assert.match(warning, /session_stop/);
   assert.equal(warning.includes("\n"), false);
 
-  // The control: this machine has ffmpeg (the render suite depends on it), so
-  // the same check with the real PATH must stay quiet.
-  const withFfmpeg = await preflight({ env: { PATH: process.env.PATH }, bundledExecutable: process.execPath });
-  assert.equal(withFfmpeg.warnings.filter((w) => /ffmpeg/.test(w)).length, 0, JSON.stringify(withFfmpeg.warnings));
+  // The control: a PATH that carries an ffmpeg AND an ffprobe by construction,
+  // not the host's — the `validate` runner has no ffmpeg (ci.yml installs it
+  // for the render job only), and a control that read the real PATH there
+  // would fail for the wrong reason. Preflight looks for the names on PATH, so
+  // two executable files are all a PATH needs to have ffmpeg on it.
+  const bin = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-fakeffmpeg-"));
+  try {
+    for (const name of ["ffmpeg", "ffprobe"]) {
+      await fs.writeFile(path.join(bin, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      if (process.platform === "win32") await fs.writeFile(path.join(bin, `${name}.exe`), "");
+    }
+    const withFfmpeg = await preflight({ env: { PATH: bin }, bundledExecutable: process.execPath });
+    assert.equal(withFfmpeg.ffmpeg, true);
+    assert.equal(withFfmpeg.ffprobe, true);
+    assert.equal(withFfmpeg.warnings.filter((w) => /ffmpeg/.test(w)).length, 0, JSON.stringify(withFfmpeg.warnings));
+    // ...and one of the two alone is still a warning, naming the one that is missing.
+    await fs.rm(path.join(bin, "ffprobe"), { force: true });
+    await fs.rm(path.join(bin, "ffprobe.exe"), { force: true });
+    const halfway = await preflight({ env: { PATH: bin }, bundledExecutable: process.execPath });
+    const halfWarning = halfway.warnings.find((w) => /ffprobe/.test(w));
+    assert.ok(halfWarning, JSON.stringify(halfway.warnings));
+    assert.match(halfWarning, /^ffprobe not found on PATH/);
+  } finally {
+    await fs.rm(bin, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

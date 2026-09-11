@@ -37,7 +37,9 @@ export const BROWSER_FIXES =
 /**
  * Mirrors the locations Playwright's own registry looks in for a channel. Kept
  * small on purpose: the goal is a good warning, not a second registry. A channel
- * this table does not know is reported as unverified, never as missing.
+ * no platform's table knows is reported as unverified, never as missing. A
+ * channel the table knows on ANOTHER platform only — Edge Canary and Chrome
+ * Canary have no Linux build — is missing here: Playwright cannot launch it.
  */
 export function defaultChannelCandidates(channel: string, platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
   const onPath = (...names: string[]) =>
@@ -84,6 +86,9 @@ export function defaultChannelCandidates(channel: string, platform: NodeJS.Platf
   return [];
 }
 
+/** The platforms the table above knows. */
+const PLATFORMS: NodeJS.Platform[] = ["darwin", "linux", "win32"];
+
 async function exists(file: string): Promise<boolean> {
   return fs.access(file).then(() => true, () => false);
 }
@@ -111,17 +116,27 @@ export async function preflight(options: PreflightOptions = {}): Promise<Preflig
   let browser: PreflightReport["browser"];
   const channel = env.DEMOMOTION_BROWSER_CHANNEL?.trim();
   if (channel) {
-    const candidates = (options.channelCandidates ?? defaultChannelCandidates)(channel, process.platform, env);
-    if (candidates.length === 0) {
-      browser = "unverified";
-    } else if ((await Promise.all(candidates.map(exists))).some(Boolean)) {
-      browser = "channel";
-    } else {
+    const candidatesFor = options.channelCandidates ?? defaultChannelCandidates;
+    const candidates = candidatesFor(channel, process.platform, env);
+    if (candidates.length > 0) {
+      if ((await Promise.all(candidates.map(exists))).some(Boolean)) {
+        browser = "channel";
+      } else {
+        browser = "missing";
+        warnings.push(
+          `no usable capture browser: DEMOMOTION_BROWSER_CHANNEL is set but browser channel "${channel}" was not found ` +
+          `(looked in ${candidates.join(", ")}); install that browser, ${BROWSER_FIXES}`
+        );
+      }
+    } else if (PLATFORMS.some((platform) => platform !== process.platform && candidatesFor(channel, platform, env).length > 0)) {
+      // Known elsewhere, absent here by construction: there is nothing to look for.
       browser = "missing";
       warnings.push(
-        `no usable capture browser: DEMOMOTION_BROWSER_CHANNEL is set but browser channel "${channel}" was not found ` +
-        `(looked in ${candidates.join(", ")}); install that browser, ${BROWSER_FIXES}`
+        `no usable capture browser: DEMOMOTION_BROWSER_CHANNEL is set but browser channel "${channel}" is not available on ` +
+        `${process.platform} (Playwright has no such build for this platform); unset it or pick a channel this platform has, ${BROWSER_FIXES}`
       );
+    } else {
+      browser = "unverified";
     }
   } else {
     const bundled = options.bundledExecutable ?? chromium.executablePath();

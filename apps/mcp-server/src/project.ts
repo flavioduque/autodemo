@@ -40,6 +40,8 @@ export async function buildProject(captureManifestPath: string, title: string): 
 
 export type ProjectPatch = {
   title?: DemoProject["title"];
+  /** The rendered frame. Absent from the patch = leave it as it is. */
+  output?: DemoProject["output"];
   style?: Partial<DemoProject["style"]>;
   zooms?: DemoProject["zooms"];
   editList?: DemoProject["editList"];

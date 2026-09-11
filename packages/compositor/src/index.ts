@@ -1,5 +1,6 @@
 import type { DemoProject } from "@demomotion/schema";
-import { sourceToOutput, totalOutputMs, cursorTrack, CURSOR_APPROACH_MS, CURSOR_PULSE_MS, type EditList } from "@demomotion/core";
+import { outputSize, sourceSize } from "@demomotion/schema";
+import { sourceToOutput, totalOutputMs, cursorTrack, framingTrack, referenceCrop, CURSOR_APPROACH_MS, CURSOR_PULSE_MS, type EditList } from "@demomotion/core";
 
 /** Seconds, trimmed to a stable decimal form. No locale, no rounding surprises. */
 function sec(ms: number): string {
@@ -12,18 +13,40 @@ function cssPx(value: number): string {
 }
 
 /**
- * The content box: the largest rectangle with the SOURCE aspect ratio that fits
- * inside the padded frame. Letterboxing, never cropping — this is the fix for
- * the `objectFit: "cover"` defect, which silently discarded 4.82% of the frame.
+ * The content box: the largest rectangle with the CAMERA's aspect ratio that
+ * fits inside the padded OUTPUT frame. Letterboxing against the background,
+ * never cropping the camera — this is the fix for the `objectFit: "cover"`
+ * defect, which silently discarded 4.82% of the frame.
+ *
+ * The camera's aspect ratio is the output frame's, because the camera rectangle
+ * is what fills this box (spec §5). Without reframing the output frame IS the
+ * source frame, so this is the source aspect ratio and the box is exactly what
+ * it always was.
  */
 export function contentBox(project: DemoProject) {
   const pad = project.style.padding;
-  const frameW = project.width - pad * 2;
-  const frameH = project.height - pad * 2;
-  const sourceAspect = project.width / project.height;
-  const width = Math.min(frameW, frameH * sourceAspect);
-  const height = width / sourceAspect;
-  return { width, height, left: (project.width - width) / 2, top: (project.height - height) / 2 };
+  const out = outputSize(project);
+  const frameW = out.width - pad * 2;
+  const frameH = out.height - pad * 2;
+  const cameraAspect = out.width / out.height;
+  const width = Math.min(frameW, frameH * cameraAspect);
+  const height = width / cameraAspect;
+  return { width, height, left: (out.width - width) / 2, top: (out.height - height) / 2 };
+}
+
+/**
+ * The reframing crop: which slice of the source frame the output frame shows.
+ *
+ * `null` when the two frames have the same aspect ratio — the overwhelmingly
+ * common case, and the one that must render byte-for-byte as it did before
+ * reframing existed. The comparison is a CROSS PRODUCT so that "the same aspect"
+ * is exact for any pixel size, 1920x1080 and 3840x2160 included.
+ */
+export function reframeCrop(project: DemoProject): { width: number; height: number } | null {
+  const source = sourceSize(project);
+  const out = outputSize(project);
+  if (out.width * source.height === out.height * source.width) return null;
+  return referenceCrop(source, out);
 }
 
 /** One camera move, already projected onto the output time base (seconds). */
@@ -148,7 +171,31 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
     throw new Error("Cannot render: the project's edit list keeps no material, so the output would be empty.");
   }
   const box = contentBox(project);
+  const out = outputSize(project);
   const cameraJson = JSON.stringify(cameraTrack(project));
+
+  // --- Reframing (spec §5) ---------------------------------------------------
+  //
+  // `crop` is null unless the output frame has a different aspect ratio from the
+  // capture. When it is null EVERY line below takes the pre-reframing branch,
+  // down to the text of the runtime script, so an existing project renders the
+  // document it has always rendered. That is not politeness: reframing is a
+  // change that could plausibly crop every demo in existence, and the only proof
+  // that it does not is that the untouched case is untouched.
+  //
+  // When it is not null, #cam is laid out at the size the WHOLE source frame
+  // takes when the reference crop exactly covers the stage, and the camera
+  // transform slides the wanted rectangle into view. #stage already clips.
+  const crop = reframeCrop(project);
+  const camBox = crop
+    ? { width: box.width / crop.width, height: box.height / crop.height }
+    : { width: box.width, height: box.height };
+  const frameJson = crop
+    ? JSON.stringify({ track: framingTrack(project.actions), crop, camWidth: camBox.width, camHeight: camBox.height })
+    : null;
+  const frameIsland = frameJson === null
+    ? ""
+    : `\n  <script type="application/json" id="demomotion-frame">${frameJson}</script>`;
 
   // The cursor is a SYNTHETIC layer: the deterministic screencast never draws the
   // pointer, so we composite it. Like zooms and callouts it is anchored in
@@ -178,7 +225,7 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
   // same projection as zooms and callouts. Each caption is ONE timed clip on its
   // own track; the words inside it are plain spans the runtime highlights.
   const captions = captionTrack(project);
-  const captionFontPx = Math.max(22, Math.round(project.width * 0.0225 * project.style.captionScale));
+  const captionFontPx = Math.max(22, Math.round(out.width * 0.0225 * project.style.captionScale));
   const captionsHtml = captions.map((layer) => {
     const body = layer.words.length > 0
       ? layer.words.map((w) => `<span class="cap-w" id="${w.id}">${escapeHtml(w.text)}</span>`).join(" ")
@@ -262,20 +309,124 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
     project.style.shadow ? "box-shadow:0 30px 80px rgba(0,0,0,0.45)" : "box-shadow:none"
   ].join(";");
 
-  const camStyle = ["position:absolute", "left:0", "top:0", `width:${cssPx(box.width)}`, `height:${cssPx(box.height)}`, "will-change:transform"].join(";");
+  const camStyle = ["position:absolute", "left:0", "top:0", `width:${cssPx(camBox.width)}`, `height:${cssPx(camBox.height)}`, "will-change:transform"].join(";");
+
+  // The camera writer and the cursor placer, as TEXT rather than as one function
+  // with a branch inside it. When there is no crop these are LITERALLY the lines
+  // the composition has emitted since before reframing existed — which is what
+  // makes "an un-reframed project renders the same document" a fact about the
+  // generator and not a hope about a conditional.
+  const applyJs = crop === null
+    ? `      function apply(t) {
+        var c = cameraAt(t);
+        cam.style.transformOrigin = c.x * 100 + "% " + c.y * 100 + "%";
+        cam.style.transform = "scale(" + c.scale + ")";
+      }`
+    : `      // --- Reframing (spec section 5). The output frame's aspect ratio differs
+      // from the capture's, so the camera is a RECTANGLE in normalized source
+      // coordinates instead of a scale about an origin: it CROPS. #cam holds the
+      // whole source frame at CAM_W x CAM_H, and the transform slides the wanted
+      // rectangle onto the stage, which clips. frameCentreAt mirrors the pure
+      // framingCentreAt in @demomotion/core exactly (same smoothstep, same holds).
+      var frameData = JSON.parse(document.getElementById("demomotion-frame").textContent);
+      var frameKf = frameData.track;
+      var CROP_W = frameData.crop.width;
+      var CROP_H = frameData.crop.height;
+      var CAM_W = frameData.camWidth;
+      var CAM_H = frameData.camHeight;
+
+      function frameClamp(value, max) { return value < 0 ? 0 : value > max ? max : value; }
+
+      function frameCentreAt(sourceMs) {
+        if (frameKf.length === 0) return { x: 0.5, y: 0.5 };
+        var first = frameKf[0];
+        if (sourceMs <= first.sourceMs) return { x: first.x, y: first.y };
+        var last = frameKf[frameKf.length - 1];
+        if (sourceMs >= last.sourceMs) return { x: last.x, y: last.y };
+        var i = 0;
+        for (var k = 0; k < frameKf.length; k++) { if (frameKf[k].sourceMs <= sourceMs) i = k; else break; }
+        var prev = frameKf[i], next = frameKf[i + 1];
+        var u = (sourceMs - prev.sourceMs) / (next.sourceMs - prev.sourceMs);
+        // Smoothstep: zero slope at both ends, so the camera dwells on the action
+        // it just reached and drifts to the next one instead of snapping.
+        var p = u * u * (3 - 2 * u);
+        return { x: prev.x + (next.x - prev.x) * p, y: prev.y + (next.y - prev.y) * p };
+      }
+
+      // The camera rectangle at OUTPUT time t. The reframing crop is aimed at the
+      // action being followed and clamped to the capture's edges; the zoom then
+      // shrinks that rectangle around its anchor, keeping the anchor's relative
+      // position inside it — the same rule the un-reframed camera follows, which
+      // is why a zoom can never push the rectangle out of the crop it lives in.
+      function cameraRect(t) {
+        var c = cameraAt(t);
+        var sourceMs = outputToSource(t * 1000);
+        var centre = sourceMs === null ? { x: 0.5, y: 0.5 } : frameCentreAt(sourceMs);
+        var fx = frameClamp(centre.x - CROP_W / 2, 1 - CROP_W);
+        var fy = frameClamp(centre.y - CROP_H / 2, 1 - CROP_H);
+        var u = frameClamp((c.x - fx) / CROP_W, 1);
+        var v = frameClamp((c.y - fy) / CROP_H, 1);
+        var w = CROP_W / c.scale;
+        var h = CROP_H / c.scale;
+        return { x: fx + u * (CROP_W - w), y: fy + v * (CROP_H - h), width: w, height: h, scale: c.scale };
+      }
+
+      function apply(t) {
+        var r = cameraRect(t);
+        cam.style.transformOrigin = "0 0";
+        cam.style.transform = "translate(" + (-r.x * CAM_W * r.scale) + "px, " + (-r.y * CAM_H * r.scale) + "px) scale(" + r.scale + ")";
+      }`;
+
+  const applyCursorJs = crop === null
+    ? `      function applyCursor(t) {
+        var sourceMs = outputToSource(t * 1000);
+        var s = sourceMs === null ? null : cursorAt(sourceMs);
+        if (!s) { cursorEl.style.opacity = "0"; ringEl.style.opacity = "0"; return; }
+        cursorEl.style.left = s.x * 100 + "%";
+        cursorEl.style.top = s.y * 100 + "%";
+        cursorEl.style.opacity = "1";
+        if (s.clickPhase === null) { ringEl.style.opacity = "0"; return; }
+        // The ring expands and fades on the click: a beat a raw recording lacks.
+        ringEl.style.left = s.x * 100 + "%";
+        ringEl.style.top = s.y * 100 + "%";
+        ringEl.style.transform = "scale(" + (0.35 + s.clickPhase * 1.05) + ")";
+        ringEl.style.opacity = "" + (0.6 * (1 - s.clickPhase));
+      }`
+    : `      function applyCursor(t) {
+        var sourceMs = outputToSource(t * 1000);
+        var s = sourceMs === null ? null : cursorAt(sourceMs);
+        if (!s) { cursorEl.style.opacity = "0"; ringEl.style.opacity = "0"; return; }
+        // Under reframing the stage is a CROP of the capture, so a normalized
+        // source point has to travel through the same rectangle the picture does
+        // or the pointer lands where the control is not. A point outside the
+        // rectangle maps outside the stage, which clips it — the cursor is not
+        // drawn over material the vertical cut does not show.
+        var r = cameraRect(t);
+        var cx = (s.x - r.x) / r.width;
+        var cy = (s.y - r.y) / r.height;
+        cursorEl.style.left = cx * 100 + "%";
+        cursorEl.style.top = cy * 100 + "%";
+        cursorEl.style.opacity = "1";
+        if (s.clickPhase === null) { ringEl.style.opacity = "0"; return; }
+        // The ring expands and fades on the click: a beat a raw recording lacks.
+        ringEl.style.left = cx * 100 + "%";
+        ringEl.style.top = cy * 100 + "%";
+        ringEl.style.transform = "scale(" + (0.35 + s.clickPhase * 1.05) + ")";
+        ringEl.style.opacity = "" + (0.6 * (1 - s.clickPhase));
+      }`;
 
   return `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:${project.width}px;height:${project.height}px;overflow:hidden;background:${project.style.background}}
-  #root{position:relative;width:${project.width}px;height:${project.height}px;overflow:hidden;background:${project.style.background}}
+  html,body{width:${out.width}px;height:${out.height}px;overflow:hidden;background:${project.style.background}}
+  #root{position:relative;width:${out.width}px;height:${out.height}px;overflow:hidden;background:${project.style.background}}
   video.seg{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;display:block}
-  .callout{position:absolute;transform:translate(-50%,-50%);max-width:${Math.round(project.width * 0.7)}px;
+  .callout{position:absolute;transform:translate(-50%,-50%);max-width:${Math.round(out.width * 0.7)}px;
     padding:16px 24px;border-radius:18px;background:rgba(8,12,24,.88);color:#fff;
     font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
-    font-size:${Math.max(22, Math.round(project.width * 0.018))}px;font-weight:650;line-height:1.2;
+    font-size:${Math.max(22, Math.round(out.width * 0.018))}px;font-weight:650;line-height:1.2;
     box-shadow:0 16px 50px rgba(0,0,0,.32)}
   /* Synthetic cursor. The SVG path tip is at its (0,0), so left/top is the tip.
      Drawn at a constant pixel size and OUTSIDE #cam, so the camera never scales it. */
@@ -290,9 +441,9 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
      and the timeline reveals it — outside its own window a caption cannot leak. */
   /* class="clip" is what the HyperFrames runtime and Studio use to recognise a
      timed element; without it hyperframes lint warns (timed_element_missing_clip_class). */
-  .cap{position:absolute;left:0;right:0;bottom:${Math.round(project.height * 0.072)}px;
+  .cap{position:absolute;left:0;right:0;bottom:${Math.round(out.height * 0.072)}px;
     display:flex;justify-content:center;opacity:0;pointer-events:none;z-index:3}
-  .cap-band{max-width:${Math.round(project.width * 0.72)}px;padding:14px 28px;border-radius:16px;
+  .cap-band{max-width:${Math.round(out.width * 0.72)}px;padding:14px 28px;border-radius:16px;
     /* Scrim, not a bare text shadow: this sits over arbitrary product UI, and a
        shadow alone is not legible over a light dashboard. */
     background:rgba(6,10,22,.86);box-shadow:0 14px 44px rgba(0,0,0,.34);
@@ -315,7 +466,7 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
 </style>
 </head>
 <body>
-  <div id="root" data-composition-id="root" data-width="${project.width}" data-height="${project.height}" data-fps="${project.fps}" data-start="0" data-duration="${sec(totalMs)}">
+  <div id="root" data-composition-id="root" data-width="${out.width}" data-height="${out.height}" data-fps="${project.fps}" data-start="0" data-duration="${sec(totalMs)}">
     <div id="stage" style="${stageStyle}">
       <div id="cam" style="${camStyle}">
       ${videos}
@@ -330,7 +481,7 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
   <script type="application/json" id="demomotion-cursor">${cursorJson}</script>
   <script type="application/json" id="demomotion-camera">${cameraJson}</script>
   <script type="application/json" id="demomotion-captions">${captionJson}</script>
-  <script type="application/json" id="demomotion-transitions">${transitionJson}</script>
+  <script type="application/json" id="demomotion-transitions">${transitionJson}</script>${frameIsland}
   <script src="${escapeHtml(gsapSrc)}"></script>
   <script>
     // The camera is a PURE FUNCTION of output time, evaluated with real GSAP
@@ -360,11 +511,7 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
         return { scale: 1, x: 0.5, y: 0.5 };
       }
 
-      function apply(t) {
-        var c = cameraAt(t);
-        cam.style.transformOrigin = c.x * 100 + "% " + c.y * 100 + "%";
-        cam.style.transform = "scale(" + c.scale + ")";
-      }
+${applyJs}
 
       // --- Synthetic cursor layer. Anchored in sourceMs; projected to output
       // through the EditList, so a click whose instant was cut is never sampled
@@ -413,20 +560,7 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
         return { x: x, y: y, clickPhase: phase };
       }
 
-      function applyCursor(t) {
-        var sourceMs = outputToSource(t * 1000);
-        var s = sourceMs === null ? null : cursorAt(sourceMs);
-        if (!s) { cursorEl.style.opacity = "0"; ringEl.style.opacity = "0"; return; }
-        cursorEl.style.left = s.x * 100 + "%";
-        cursorEl.style.top = s.y * 100 + "%";
-        cursorEl.style.opacity = "1";
-        if (s.clickPhase === null) { ringEl.style.opacity = "0"; return; }
-        // The ring expands and fades on the click: a beat a raw recording lacks.
-        ringEl.style.left = s.x * 100 + "%";
-        ringEl.style.top = s.y * 100 + "%";
-        ringEl.style.transform = "scale(" + (0.35 + s.clickPhase * 1.05) + ")";
-        ringEl.style.opacity = "" + (0.6 * (1 - s.clickPhase));
-      }
+${applyCursorJs}
 
       // --- Caption layer: word-by-word karaoke. ---
       //

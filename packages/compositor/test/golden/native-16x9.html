@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:#0b1020}
+  #root{position:relative;width:1920px;height:1080px;overflow:hidden;background:#0b1020}
+  video.seg{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;display:block}
+  .callout{position:absolute;transform:translate(-50%,-50%);max-width:1344px;
+    padding:16px 24px;border-radius:18px;background:rgba(8,12,24,.88);color:#fff;
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    font-size:35px;font-weight:650;line-height:1.2;
+    box-shadow:0 16px 50px rgba(0,0,0,.32)}
+  /* Synthetic cursor. The SVG path tip is at its (0,0), so left/top is the tip.
+     Drawn at a constant pixel size and OUTSIDE #cam, so the camera never scales it. */
+  #cursor{position:absolute;left:0;top:0;width:28px;height:28px;opacity:0;pointer-events:none;
+    overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));will-change:left,top,opacity;z-index:2}
+  #cursor-ring{position:absolute;left:0;top:0;width:46px;height:46px;margin:-23px 0 0 -23px;
+    border-radius:50%;border:3px solid rgba(56,189,248,.95);opacity:0;pointer-events:none;
+    transform:scale(.3);will-change:transform,opacity;z-index:2}
+  /* Caption band: bottom third, full-width flex container so the line centres
+     without left:50% + translateX(-50%), which clips at the composition edge
+     (references/captions.md, "Container pattern"). The band starts at opacity 0
+     and the timeline reveals it — outside its own window a caption cannot leak. */
+  /* class="clip" is what the HyperFrames runtime and Studio use to recognise a
+     timed element; without it hyperframes lint warns (timed_element_missing_clip_class). */
+  .cap{position:absolute;left:0;right:0;bottom:78px;
+    display:flex;justify-content:center;opacity:0;pointer-events:none;z-index:3}
+  .cap-band{max-width:1382px;padding:14px 28px;border-radius:16px;
+    /* Scrim, not a bare text shadow: this sits over arbitrary product UI, and a
+       shadow alone is not legible over a light dashboard. */
+    background:rgba(6,10,22,.86);box-shadow:0 14px 44px rgba(0,0,0,.34);
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    font-size:43px;font-weight:600;line-height:1.3;text-align:center;text-wrap:balance;
+    color:#c8d2e6;text-shadow:0 2px 6px rgba(0,0,0,.5)}
+  /* inline-block so the active word can take a transform; the transparent border
+     is the slot the accent underline fades into, so nothing reflows on highlight. */
+  /* Horizontal padding, not just the HTML space between spans: the active word
+     takes a scale transform, and an inline-block grows from its centre, so at
+     rest-adjacent sizes it visually swallows the gap and reads as "wordword".
+     The em padding keeps a gap that scales with the type; the HTML space is
+     still there so lines can wrap between words. */
+  .cap-w{display:inline-block;border-bottom:2px solid rgba(0,0,0,0);
+    padding:0 .08em 2px;will-change:transform,color}
+  /* Opening and closing fade, painted in the background colour over everything.
+     Starts transparent: with both fades at 0 ms it is simply never touched. */
+  #fade{position:absolute;left:0;top:0;width:100%;height:100%;background:#0b1020;
+    opacity:0;pointer-events:none;z-index:9}
+</style>
+</head>
+<body>
+  <div id="root" data-composition-id="root" data-width="1920" data-height="1080" data-fps="30" data-start="0" data-duration="6.666667">
+    <div id="stage" style="position:absolute;left:99.555556px;top:56px;width:1720.888889px;height:968px;overflow:hidden;border-radius:24px;background:#000;box-shadow:0 30px 80px rgba(0,0,0,0.45)">
+      <div id="cam" style="position:absolute;left:0;top:0;width:1720.888889px;height:968px;will-change:transform">
+      <video id="clip-0" class="seg" data-start="0" data-duration="4" data-media-start="0" data-playback-rate="1" data-track-index="0" src="source.webm" muted playsinline></video>
+      <video id="clip-1" class="seg" data-start="3.82" data-duration="2.846667" data-media-start="5.73" data-playback-rate="1.5" data-track-index="1" src="source.webm" muted playsinline></video>
+      </div>
+      <div id="cursor-ring"></div>
+      <svg id="cursor" width="28" height="28" viewBox="0 0 16 20" aria-hidden="true"><path d="M0 0 L0 15 L4.2 11.3 L6.9 17.8 L9.3 16.8 L6.6 10.4 L12 10.4 Z" fill="#fff" stroke="#12151c" stroke-width="1.1" stroke-linejoin="round"/></svg>
+    </div>
+    <div id="callout-0" class="callout" data-start="2" data-duration="1" data-track-index="1" style="left:50%;top:85%">One form adds the client</div>
+    <div id="cap-0" class="cap clip" data-start="1.2" data-duration="1.8" data-track-index="2"><div class="cap-band"><span class="cap-w" id="cap-0-w-0">Open</span> <span class="cap-w" id="cap-0-w-1">the</span> <span class="cap-w" id="cap-0-w-2">form</span></div></div>
+    <div id="fade"></div>
+  </div>
+  <script type="application/json" id="demomotion-cursor">{"track":[{"sourceMs":1200,"x":0.82,"y":0.18,"click":true},{"sourceMs":3400,"x":0.24,"y":0.63,"click":false},{"sourceMs":7200,"x":0.51,"y":0.91,"click":true}],"editList":[{"sourceFromMs":0,"sourceToMs":4000,"speed":1},{"sourceFromMs":6000,"sourceToMs":10000,"speed":1.5}],"approachMs":500,"pulseMs":400}</script>
+  <script type="application/json" id="demomotion-camera">[{"start":1,"end":2.2,"scale":1.36,"x":0.82,"y":0.18},{"start":4.666667,"end":5.6,"scale":1.22,"x":0.51,"y":0.91}]</script>
+  <script type="application/json" id="demomotion-captions">{"groups":[{"id":"cap-0","start":1.2,"end":3,"words":[{"id":"cap-0-w-0","start":1.2,"end":1.8},{"id":"cap-0-w-1","start":1.8,"end":2.4},{"id":"cap-0-w-2","start":2.4,"end":3}]}],"idle":"#c8d2e6","active":"#ffffff","accent":"#38bdf8","emphasis":0.06}</script>
+  <script type="application/json" id="demomotion-transitions">{"crossfades":[{"id":"clip-1","start":3.82,"duration":0.18}],"opening":0.32,"ending":0.42,"total":6.666667}</script>
+  <script src="gsap.min.js"></script>
+  <script>
+    // The camera is a PURE FUNCTION of output time, evaluated with real GSAP
+    // eases. HyperFrames renders frames out of order across parallel workers, so
+    // nothing here may depend on the order in which times are visited.
+    (function () {
+      var camera = JSON.parse(document.getElementById("demomotion-camera").textContent);
+      var cam = document.getElementById("cam");
+      var easeIn = gsap.parseEase("power3.out");
+      var easeOut = gsap.parseEase("power2.inOut");
+      var TOTAL = 6.666667;
+
+      function cameraAt(t) {
+        for (var i = 0; i < camera.length; i++) {
+          var k = camera[i];
+          if (t < k.start || t >= k.end) continue;
+          var span = k.end - k.start;
+          var enter = Math.min(0.25, span * 0.3);
+          var exit = Math.min(0.3, span * 0.3);
+          var amount = k.scale - 1;
+          var scale;
+          if (t < k.start + enter) scale = 1 + amount * easeIn((t - k.start) / enter);
+          else if (t > k.end - exit) scale = 1 + amount * (1 - easeOut((t - (k.end - exit)) / exit));
+          else scale = k.scale;
+          return { scale: scale, x: k.x, y: k.y };
+        }
+        return { scale: 1, x: 0.5, y: 0.5 };
+      }
+
+      function apply(t) {
+        var c = cameraAt(t);
+        cam.style.transformOrigin = c.x * 100 + "% " + c.y * 100 + "%";
+        cam.style.transform = "scale(" + c.scale + ")";
+      }
+
+      // --- Synthetic cursor layer. Anchored in sourceMs; projected to output
+      // through the EditList, so a click whose instant was cut is never sampled
+      // and its pulse never fires. outputToSource and cursorAt mirror the pure
+      // @demomotion/core functions exactly (same windows, same easing). ---
+      var cursorData = JSON.parse(document.getElementById("demomotion-cursor").textContent);
+      var cursorKf = cursorData.track;
+      var cursorEdit = cursorData.editList;
+      var APPROACH = cursorData.approachMs;
+      var PULSE = cursorData.pulseMs;
+      var cursorEl = document.getElementById("cursor");
+      var ringEl = document.getElementById("cursor-ring");
+
+      function outputToSource(ms) {
+        var from = 0;
+        for (var i = 0; i < cursorEdit.length; i++) {
+          var s = cursorEdit[i];
+          var to = from + (s.sourceToMs - s.sourceFromMs) / s.speed;
+          if (ms >= from && ms < to) return s.sourceFromMs + (ms - from) * s.speed;
+          from = to;
+        }
+        return null;
+      }
+
+      function cursorEaseOut(p) { return 1 - Math.pow(1 - p, 3); }
+
+      function cursorAt(sourceMs) {
+        if (cursorKf.length === 0 || sourceMs < cursorKf[0].sourceMs) return null;
+        var pi = 0;
+        for (var i = 0; i < cursorKf.length; i++) { if (cursorKf[i].sourceMs <= sourceMs) pi = i; else break; }
+        var prev = cursorKf[pi], next = cursorKf[pi + 1];
+        var x = prev.x, y = prev.y;
+        if (next) {
+          var aStart = Math.max(prev.sourceMs, next.sourceMs - APPROACH);
+          if (sourceMs > aStart) {
+            var p = cursorEaseOut((sourceMs - aStart) / (next.sourceMs - aStart));
+            x = prev.x + (next.x - prev.x) * p;
+            y = prev.y + (next.y - prev.y) * p;
+          }
+        }
+        var phase = null;
+        for (var j = 0; j < cursorKf.length; j++) {
+          var k = cursorKf[j];
+          if (k.click && sourceMs >= k.sourceMs && sourceMs < k.sourceMs + PULSE) { phase = (sourceMs - k.sourceMs) / PULSE; break; }
+        }
+        return { x: x, y: y, clickPhase: phase };
+      }
+
+      function applyCursor(t) {
+        var sourceMs = outputToSource(t * 1000);
+        var s = sourceMs === null ? null : cursorAt(sourceMs);
+        if (!s) { cursorEl.style.opacity = "0"; ringEl.style.opacity = "0"; return; }
+        cursorEl.style.left = s.x * 100 + "%";
+        cursorEl.style.top = s.y * 100 + "%";
+        cursorEl.style.opacity = "1";
+        if (s.clickPhase === null) { ringEl.style.opacity = "0"; return; }
+        // The ring expands and fades on the click: a beat a raw recording lacks.
+        ringEl.style.left = s.x * 100 + "%";
+        ringEl.style.top = s.y * 100 + "%";
+        ringEl.style.transform = "scale(" + (0.35 + s.clickPhase * 1.05) + ")";
+        ringEl.style.opacity = "" + (0.6 * (1 - s.clickPhase));
+      }
+
+      // --- Caption layer: word-by-word karaoke. ---
+      //
+      // The MECHANISM IS COPIED, not invented. Sources, both shipped with the
+      // HyperFrames skill:
+      //   references/captions.md          — one group element per caption with
+      //     per-word spans, one group visible at a time, a hard tl.set kill at
+      //     the group's end, and the self-lint below that seeks past each group
+      //     and warns if anything is still visible.
+      //   references/dynamic-techniques.md — "All energy levels use karaoke
+      //     highlight as the baseline... low energy gets a gentle white shift
+      //     with 3% scale". This is the low-energy end of that table on purpose:
+      //     the captions sit over software UI, where a slam or scatter reads as
+      //     cheap. The intensity is the captionEmphasis style knob.
+      //
+      // Tweens carry the state, never callbacks: GSAP's seek() suppresses
+      // onUpdate but always WRITES a tweened property, so a cold render worker
+      // landing on any frame resolves the same values. Every tween states both
+      // endpoints explicitly (fromTo), so nothing depends on the order frames
+      // are visited in.
+      var captionData = JSON.parse(document.getElementById("demomotion-captions").textContent);
+      var CAP_IDLE = captionData.idle;
+      var CAP_ACTIVE = captionData.active;
+      var CAP_ACCENT = captionData.accent;
+      var CAP_POP = 1 + captionData.emphasis;
+      var CAP_CLEAR = "rgba(0,0,0,0)";
+
+      function buildCaptions(tl) {
+        captionData.groups.forEach(function (group) {
+          var groupEl = document.getElementById(group.id);
+          if (!groupEl) return;
+          // The band itself: revealed at the group's start, killed at its end.
+          // The HyperFrames clip window (data-start/data-duration) already hides
+          // it; this makes the kill deterministic on the timeline as well.
+          tl.set(groupEl, { opacity: 1 }, group.start);
+          tl.set(groupEl, { opacity: 0 }, group.end);
+
+          group.words.forEach(function (word) {
+            var el = document.getElementById(word.id);
+            if (!el) return;
+            // The highlight leads the word rather than lagging it: a short ramp,
+            // capped so a long word does not fade in for a second.
+            var ramp = Math.max(0.04, Math.min(0.14, (word.end - word.start) * 0.35));
+            tl.fromTo(el,
+              { color: CAP_IDLE, fontWeight: 600, scale: 1, borderBottomColor: CAP_CLEAR },
+              { color: CAP_ACTIVE, fontWeight: 700, scale: CAP_POP, borderBottomColor: CAP_ACCENT,
+                duration: ramp, ease: "power2.out" },
+              word.start);
+            tl.to(el,
+              { color: CAP_IDLE, fontWeight: 600, scale: 1, borderBottomColor: CAP_CLEAR,
+                duration: ramp, ease: "power2.inOut" },
+              word.end);
+          });
+        });
+      }
+
+      // --- Transitions. ---
+      //
+      // The crossfade is the catalog's baseline dissolve, copied from
+      // references/transitions/css-dissolve.md ("Crossfade — simple opacity
+      // swap"), with one deliberate difference: only the INCOMING clip is
+      // animated. It sits on top (later in the document), so fading it from 0 to
+      // 1 over a fully opaque outgoing clip gives out*(1-a) + in*a — a correct
+      // dissolve. Fading BOTH would dip the middle of the transition dark.
+      //
+      // The opening and closing fades are the catalog's "color dip", against the
+      // composition background instead of black.
+      var transitionData = JSON.parse(document.getElementById("demomotion-transitions").textContent);
+
+      function buildTransitions(tl) {
+        transitionData.crossfades.forEach(function (fade) {
+          var el = document.getElementById(fade.id);
+          if (!el) return;
+          tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: fade.duration, ease: "power2.inOut" }, fade.start);
+        });
+
+        var fadeEl = document.getElementById("fade");
+        if (!fadeEl) return;
+        if (transitionData.opening > 0) {
+          tl.fromTo(fadeEl, { opacity: 1 }, { opacity: 0, duration: transitionData.opening, ease: "power2.out" }, 0);
+        }
+        if (transitionData.ending > 0) {
+          // Pinned to the END of the composition, so the last frame is the
+          // background colour and not a half-faded frame.
+          tl.fromTo(fadeEl, { opacity: 0 }, { opacity: 1, duration: transitionData.ending, ease: "power2.in" },
+            Math.max(0, transitionData.total - transitionData.ending));
+        }
+      }
+
+      // Self-lint, straight from references/captions.md: seek just past each
+      // group and warn if its band is still visible. It runs at composition
+      // init, BEFORE the timeline is published, so a leak is loud in the render
+      // log instead of silently sitting over the next scene.
+      function lintCaptions(tl) {
+        if (typeof window.getComputedStyle !== "function") return;
+        captionData.groups.forEach(function (group) {
+          var el = document.getElementById(group.id);
+          if (!el) return;
+          tl.seek(group.end + 0.01);
+          if (window.getComputedStyle(el).opacity !== "0") {
+            console.warn("[caption-lint] " + group.id + " still visible at t=" + (group.end + 0.01).toFixed(2) + "s");
+          }
+        });
+        tl.seek(0);
+      }
+
+      // The camera is driven by a property SETTER, not by an onUpdate callback:
+      // GSAP's seek() suppresses callbacks by default, but it always writes the
+      // tweened property. So the frame is correct whichever seek API drives it.
+      var driver = { _t: 0 };
+      Object.defineProperty(driver, "t", {
+        configurable: true,
+        get: function () { return this._t; },
+        set: function (value) { this._t = value; apply(value); applyCursor(value); }
+      });
+
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+      tl.to(driver, { t: TOTAL, duration: TOTAL, ease: "none" }, 0);
+      buildCaptions(tl);
+      buildTransitions(tl);
+      apply(0);
+      applyCursor(0);
+      lintCaptions(tl);
+      window.__timelines["root"] = tl;
+    })();
+  </script>
+</body>
+</html>

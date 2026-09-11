@@ -4,7 +4,7 @@ import http from "node:http";
 import dns from "node:dns/promises";
 import fs from "node:fs/promises";
 import type { AddressInfo } from "node:net";
-import { startSession, goto, click, status, stopSession, type Session } from "../src/session-manager.ts";
+import { startSession, goto, click, status, stopSession, inspectPage, type Session } from "../src/session-manager.ts";
 
 // ---------------------------------------------------------------------------
 // The network allowlist, enforced at the network layer, against a REAL browser
@@ -77,6 +77,8 @@ function pagesPointingAt(b: LocalServer) {
     "/redirect": (res: http.ServerResponse) => { res.writeHead(302, { location: `${b.origin}/from-redirect` }); res.end(); },
     "/link": html(`<h1 id="stay">A</h1><a id="link" href="${b.origin}/from-click">go</a>`),
     "/fetch": html(`<h1>A</h1><script>fetch("${b.origin}/from-fetch").catch(function(){})</script>`),
+    // Same-origin fetch and XHR whose ANSWER is the 302 to server B.
+    "/fetch-hop": html(`<h1>A</h1><script>fetch("/redirect").catch(function(){});var x=new XMLHttpRequest();x.open("GET","/redirect");x.send()</script>`),
     "/ws": html(`<h1>A</h1><script>try{new WebSocket("${b.origin.replace("http", "ws")}/from-ws")}catch(e){}</script>`),
     "/plain": html(`<h1>A</h1>`)
   };
@@ -203,10 +205,12 @@ test("default: variable unset — 127.0.0.1 works and a metadata address is refu
   const session = await open(t, undefined);
   assert.equal(status(session.id).allowedHosts, "localhost, 127.0.0.1, ::1");
   await goto(session.id, `${a.origin}/`);
-  assert.equal(a.hits.length, 1);
+  // The navigation reached A. (A `/favicon.ico` to this allowed host may also
+  // arrive during networkidle; scope to the navigation, which is the point.)
+  assert.equal(a.hits.filter((h) => h.url === "/").length, 1, "the allowlisted navigation did not reach the server");
 
   // Refused on the literal, by the pre-check in goto: nothing is navigated, so
-  // no request exists for the route layer to see — the only record is ours.
+  // no request exists for the http guard to see — the only record is ours.
   await assert.rejects(
     () => goto(session.id, "http://169.254.169.254/latest/meta-data/"),
     (error: Error) => { assert.match(error.message, /169\.254\.169\.254/); assert.match(error.message, /DEMOMOTION_ALLOWED_HOSTS/); return true; }
@@ -238,6 +242,31 @@ test("redirect: an allowlisted page answering 302 to the forbidden server — ze
   assert.equal(b.hits.length, 0, "the redirect target never received the request");
   const blocked = await waitForBlock(session.id, (r) => r.url === `${b.origin}/from-redirect`);
   assert.equal(blocked.kind, "redirect");
+});
+
+test("subresource redirect: fetch() and XHR answered 302 to the forbidden server — zero hits, both hops recorded as redirects; the same hops are followed when B is allowed", { timeout: 60_000 }, async (t) => {
+  // Chromium restarts a cross-origin fetch()/XHR redirect as a NEW request with
+  // no redirect mark, and Playwright's route auto-continues it as a redirect: a
+  // layer judging only marked hops let this one through, on the main page.
+  const b = await serve();
+  const a = await serve(pagesPointingAt(b));
+  t.after(async () => { await a.close(); await b.close(); });
+
+  const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
+  await goto(session.id, `${a.origin}/fetch-hop`);
+  await settle(800);
+  assert.equal(a.hits.filter((h) => h.url === "/redirect").length, 2, "fetch and XHR did not both request the redirecting URL");
+  assert.equal(b.hits.length, 0, `a hop reached the forbidden server: ${JSON.stringify(b.hits)}`);
+  const hops = status(session.id).blockedRequests.filter((r) => r.url === `${b.origin}/from-redirect`);
+  assert.equal(hops.length, 2, `expected the fetch hop and the XHR hop, got ${JSON.stringify(status(session.id).blockedRequests)}`);
+  assert.deepEqual(hops.map((r) => r.kind), ["redirect", "redirect"]);
+
+  // Positive half: with B allowed, the very same hops arrive.
+  const allowed = await open(t, { allowedHosts: `127.0.0.1:${a.port},127.0.0.1:${b.port}` });
+  await goto(allowed.id, `${a.origin}/fetch-hop`);
+  await settle(800);
+  assert.equal(b.hits.filter((h) => h.url === "/from-redirect").length, 2, "the allowed redirects were not followed");
+  assert.deepEqual(status(allowed.id).blockedRequests, []);
 });
 
 test("click: a link to the forbidden server — the click does not reach it, the page stays, the block is recorded", { timeout: 60_000 }, async (t) => {
@@ -346,4 +375,209 @@ test("DNS pin: a listed name is resolved by OUR resolver and Chromium is pinned 
     (error: Error) => { assert.match(error.message, /169\.254\.169\.254/); assert.match(error.message, /DEMOMOTION_ALLOWED_HOSTS/); return true; }
   );
   assert.equal(a.hits.length, before);
+});
+
+// ---------------------------------------------------------------------------
+// Other TARGETS: cross-process iframes (OOPIFs), popups, nested OOPIFs.
+//
+// The redirect layer is a CDP `Fetch` session, and a `Fetch` session sees one
+// TARGET. A cross-site <iframe> is its own target (Chromium site isolation), a
+// popup is its own target, an iframe inside that iframe on a third site is a
+// third. Every one of them must be guarded, and guarded BEFORE its first
+// request goes out.
+//
+// A third site is needed for the iframe to be out-of-process: a second port on
+// 127.0.0.1 is the same site (scheme + host). `localhost` and `sub.localhost`
+// are different sites from `127.0.0.1` AND from each other, and both are
+// loopback by definition (RFC 6761), so they still reach the local servers with
+// no DNS. Every scenario ASSERTS the frame landed in a separate target via
+// `Target.getTargets` — otherwise it would be exercising the same-process path
+// that already worked.
+// ---------------------------------------------------------------------------
+
+/** Server B, reached as two distinct sites. */
+const asLocalhost = (b: LocalServer) => `http://localhost:${b.port}`;
+const asSubLocalhost = (b: LocalServer) => `http://sub.localhost:${b.port}`;
+
+/** A, B (as localhost and sub.localhost) allowed; C — the third server — not. */
+function allowAandB(a: LocalServer, b: LocalServer) {
+  return `127.0.0.1:${a.port},localhost:${b.port},sub.localhost:${b.port},127.0.0.1:${b.port},[::1]:${b.port}`;
+}
+
+/** Three servers: A embeds B; B (and popups) try to reach C, which is not allowlisted. */
+async function targetsScenario(t: any) {
+  const c = await serve();
+  const b: LocalServer = await serve({
+    "/frame": html(`<h1 id="inframe">B</h1><button id="inframe-btn" onclick="this.textContent='clicked'">go</button>`),
+    "/frame-hop": html(`<h1>B</h1><script>fetch("/hop").catch(function(){})</script>`),
+    "/hop": (res) => { res.writeHead(302, { location: `${c.origin}/from-oopif-hop` }); res.end(); },
+    // Embeds B AGAIN, as a third site (sub.localhost), whose document hops.
+    // Read at request time: `b` does not exist while its own routes are declared.
+    "/nested": (res) => html(`<h1>B</h1><iframe id="inner" src="${asSubLocalhost(b)}/frame-hop"></iframe>`)(res)
+  });
+  const a = await serve({
+    "/embed": html(`<h1>A</h1><iframe id="f" src="${asLocalhost(b)}/frame"></iframe>`),
+    "/embed-hop": html(`<h1>A</h1><iframe id="f" src="${asLocalhost(b)}/frame-hop"></iframe>`),
+    "/embed-nested": html(`<h1>A</h1><iframe id="f" src="${asLocalhost(b)}/nested"></iframe>`),
+    "/redirect": (res) => { res.writeHead(302, { location: `${c.origin}/from-popup-hop` }); res.end(); },
+    "/popups": html(`<h1>A</h1>
+      <button id="open-ok" onclick="window.open(location.origin + '/plain')">ok</button>
+      <button id="open-bad" onclick="window.open('${c.origin}/from-popup')">bad</button>
+      <button id="open-hop" onclick="window.open(location.origin + '/redirect')">hop</button>`),
+    "/plain": html(`<h1>A</h1>`)
+  });
+  t.after(async () => { await a.close(); await b.close(); await c.close(); });
+  return { a, b, c };
+}
+
+/** Chromium's own list of out-of-process iframe targets, read through a throwaway session. */
+async function oopifTargets(session: Session): Promise<Array<{ url: string }>> {
+  const cdp = await session.context.newCDPSession(session.page);
+  try {
+    const { targetInfos } = await cdp.send("Target.getTargets");
+    return targetInfos.filter((info) => info.type === "iframe").map((info) => ({ url: info.url }));
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
+}
+
+async function assertOutOfProcess(session: Session, frameOrigin: string) {
+  const targets = await oopifTargets(session);
+  assert.ok(targets.some((info) => info.url.startsWith(frameOrigin)),
+    `the ${frameOrigin} frame is not a separate target — it is in-process, and this test would exercise the wrong path. Targets: ${JSON.stringify(targets)}`);
+}
+
+test("OOPIF redirect: a fetch inside a cross-process iframe answered 302 to the forbidden port — zero hits, block recorded as a redirect", { timeout: 60_000 }, async (t) => {
+  const { a, b, c } = await targetsScenario(t);
+  const session = await open(t, { allowedHosts: allowAandB(a, b) });
+  await goto(session.id, `${a.origin}/embed-hop`);
+  await settle(800);
+
+  // SEED: the frame was served, its script ran, the hop was really issued.
+  assert.equal(b.hits.filter((h) => h.url === "/frame-hop").length, 1, "the iframe document was not served");
+  assert.equal(b.hits.filter((h) => h.url === "/hop").length, 1, "the fetch inside the iframe was never issued");
+  await assertOutOfProcess(session, asLocalhost(b));
+
+  assert.deepEqual(c.hits, [], `the forbidden server logged a hit from inside the OOPIF: ${JSON.stringify(c.hits)}`);
+  const blocked = await waitForBlock(session.id, (r) => r.url === `${c.origin}/from-oopif-hop`);
+  assert.equal(blocked.kind, "redirect");
+});
+
+test("nested OOPIF: an iframe on a third site inside the cross-process iframe is guarded too", { timeout: 60_000 }, async (t) => {
+  const { a, b, c } = await targetsScenario(t);
+  const session = await open(t, { allowedHosts: allowAandB(a, b) });
+  await goto(session.id, `${a.origin}/embed-nested`);
+  await settle(1000);
+
+  assert.equal(b.hits.filter((h) => h.url === "/nested").length, 1, "the outer iframe was not served");
+  assert.equal(b.hits.filter((h) => h.url === "/frame-hop").length, 1, "the inner iframe was not served");
+  assert.equal(b.hits.filter((h) => h.url === "/hop").length, 1, "the fetch inside the inner iframe was never issued");
+  const targets = await oopifTargets(session);
+  assert.ok(targets.some((i) => i.url.startsWith(asLocalhost(b))), `outer frame not out-of-process: ${JSON.stringify(targets)}`);
+  assert.ok(targets.some((i) => i.url.startsWith(asSubLocalhost(b))), `inner frame not out-of-process: ${JSON.stringify(targets)}`);
+
+  assert.deepEqual(c.hits, [], `the forbidden server logged a hit from inside the NESTED OOPIF: ${JSON.stringify(c.hits)}`);
+  const blocked = await waitForBlock(session.id, (r) => r.url === `${c.origin}/from-oopif-hop`);
+  assert.equal(blocked.kind, "redirect");
+});
+
+test("legitimate cross-process iframe: it loads, inspect sees into it, a click inside it lands and records", { timeout: 60_000 }, async (t) => {
+  const { a, b } = await targetsScenario(t);
+  const session = await open(t, { allowedHosts: allowAandB(a, b) });
+  await goto(session.id, `${a.origin}/embed`);
+  await assertOutOfProcess(session, asLocalhost(b));
+  assert.equal(b.hits.filter((h) => h.url === "/frame").length, 1, "the iframe document was not served");
+
+  const frame = session.page.frames().find((f) => f.url().startsWith(asLocalhost(b)));
+  assert.ok(frame, "Playwright did not attach the cross-process frame");
+  assert.equal(await frame!.locator("#inframe-btn").textContent(), "go", "the button is not in its initial state");
+
+  const inspected = await inspectPage(session.id);
+  assert.deepEqual(inspected.skippedFrames, []);
+  assert.ok(inspected.elements.some((e) => e.selector === "#inframe-btn" && e.frameUrl.startsWith(asLocalhost(b))),
+    `inspect did not see into the OOPIF: ${JSON.stringify(inspected.elements)}`);
+
+  await click(session.id, "#inframe-btn", "go");
+  // The EFFECT, read from the frame in a separate command.
+  assert.equal(await frame!.locator("#inframe-btn").textContent(), "clicked", "the click never reached the iframe");
+  const action = session.actions.at(-1)!;
+  assert.equal(action.type, "click");
+  assert.ok(action.x! > 0 && action.x! < 1 && action.y! > 0 && action.y! < 1, "the click recorded no viewport coordinates");
+  assert.deepEqual(status(session.id).blockedRequests, []);
+});
+
+test("popup: window.open to the allowed host loads; to the forbidden host is stopped on its first request and recorded", { timeout: 60_000 }, async (t) => {
+  const { a, c } = await targetsScenario(t);
+  const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
+  await goto(session.id, `${a.origin}/popups`);
+
+  const okPopup = session.context.waitForEvent("page");
+  await click(session.id, "#open-ok", "ok");
+  const popup = await okPopup;
+  await popup.waitForLoadState();
+  assert.equal(popup.url(), `${a.origin}/plain`);
+  assert.equal(a.hits.filter((h) => h.url === "/plain").length, 1, "the allowed popup was not served");
+  assert.deepEqual(status(session.id).blockedRequests, []);
+
+  // No `page` event to wait for here: Playwright reports a popup only once its
+  // first navigation COMMITS (crPage `_firstNonInitialNavigationCommittedPromise`),
+  // and this one is aborted before it can.
+  await click(session.id, "#open-bad", "bad");
+  const blocked = await waitForBlock(session.id, (r) => r.url === `${c.origin}/from-popup`);
+  assert.equal(blocked.kind, "navigation");
+  await settle();
+  assert.deepEqual(c.hits, [], `the forbidden popup reached the server: ${JSON.stringify(c.hits)}`);
+  assert.ok(session.context.pages().every((p) => !p.url().startsWith(c.origin)), "a window is showing the forbidden URL");
+});
+
+test("popup via redirect: window.open to the allowed host answering 302 to the forbidden port — zero hits, block recorded", { timeout: 60_000 }, async (t) => {
+  const { a, c } = await targetsScenario(t);
+  const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
+  await goto(session.id, `${a.origin}/popups`);
+
+  // Again no `page` event to wait for: with the hop refused, the popup's first
+  // navigation never commits and Playwright never reports the window.
+  await click(session.id, "#open-hop", "hop");
+  const blocked = await waitForBlock(session.id, (r) => r.url === `${c.origin}/from-popup-hop`);
+  assert.equal(blocked.kind, "redirect");
+  await settle(800);
+  assert.equal(a.hits.filter((h) => h.url === "/redirect").length, 1, "the redirecting URL was never requested");
+  assert.deepEqual(c.hits, [], `the popup followed the redirect to the forbidden server: ${JSON.stringify(c.hits)}`);
+  assert.ok(session.context.pages().every((p) => !p.url().startsWith(c.origin)), "a window is showing the forbidden URL");
+});
+
+test("iframe churn: after creating and destroying cross-process iframes, no target lingers and the guard still holds", { timeout: 90_000 }, async (t) => {
+  const { a, b, c } = await targetsScenario(t);
+  const session = await open(t, { allowedHosts: allowAandB(a, b) });
+  await goto(session.id, `${a.origin}/plain`);
+  assert.deepEqual(await oopifTargets(session), [], "the plain page already has an out-of-process frame");
+
+  const embed = (src: string) => session.page.evaluate((url: string) => new Promise<void>((resolve) => {
+    const frame = document.createElement("iframe");
+    frame.id = "churn";
+    frame.onload = () => resolve();
+    frame.src = url;
+    document.body.appendChild(frame);
+  }), src);
+  const remove = () => session.page.evaluate(() => { document.getElementById("churn")?.remove(); });
+
+  const ROUNDS = 5;
+  for (let round = 0; round < ROUNDS; round++) {
+    await embed(`${asLocalhost(b)}/frame`);
+    // SEED, every round: the frame really was a separate target while it lived.
+    await assertOutOfProcess(session, asLocalhost(b));
+    await remove();
+  }
+  assert.equal(b.hits.filter((h) => h.url === "/frame").length, ROUNDS, "not every iframe was served");
+  // Chromium's own view: nothing lingers once the frames are gone.
+  for (let waited = 0; (await oopifTargets(session)).length > 0 && waited < 4000; waited += 100) await settle(100);
+  assert.deepEqual(await oopifTargets(session), [], "an iframe target outlived its element");
+
+  // And the guard is intact for the next one.
+  await embed(`${asLocalhost(b)}/frame-hop`);
+  const blocked = await waitForBlock(session.id, (r) => r.url === `${c.origin}/from-oopif-hop`);
+  assert.equal(blocked.kind, "redirect");
+  await settle();
+  assert.equal(b.hits.filter((h) => h.url === "/hop").length, 1, "the hop inside the last iframe was never issued");
+  assert.deepEqual(c.hits, [], `the forbidden server was reached after churn: ${JSON.stringify(c.hits)}`);
 });

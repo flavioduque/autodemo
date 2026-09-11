@@ -1,9 +1,10 @@
-import { chromium, type Browser, type BrowserContext, type Frame, type Locator, type Page } from "playwright";
+import { chromium, type Browser, type BrowserContext, type CDPSession, type Frame, type Locator, type Page } from "playwright";
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import type { DemoAction } from "@demomotion/schema";
 import { ScreencastCapture } from "./capture-adapter.js";
+import { NetworkPolicy, type Decision, type LookupFn } from "./network-policy.js";
 
 /**
  * Capture mode.
@@ -20,6 +21,27 @@ function captureMode(): CaptureMode {
   return process.env.DEMOMOTION_CAPTURE === "record-video" ? "record-video" : "screencast";
 }
 
+/** How a request was stopped, and what it was. Reported by `session_status` and `session_stop`. */
+export interface BlockedRequest {
+  /** Monotonic within the session, so a caller can tell "since my call" apart. */
+  seq: number;
+  url: string;
+  host: string;
+  port: number;
+  /**
+   * `navigation`: a top-level or frame document load (a `goto`, a click on a
+   * link, `window.open`). `redirect`: an HTTP redirect hop. `subresource`:
+   * fetch/XHR/script/image/... `websocket`: a WebSocket handshake.
+   */
+  kind: "navigation" | "redirect" | "subresource" | "websocket";
+  reason: string;
+  message: string;
+  atMs: number;
+}
+
+/** Blocked requests kept per session; a page that hammers a forbidden host must not grow memory. */
+const BLOCKED_REQUESTS_KEPT = 200;
+
 export interface Session {
   id: string;
   dir: string;
@@ -33,6 +55,10 @@ export interface Session {
   mode: CaptureMode;
   capture?: ScreencastCapture;
   actions: DemoAction[];
+  policy: NetworkPolicy;
+  /** The most recent `BLOCKED_REQUESTS_KEPT` blocks; `blockedCount` is the true total. */
+  blockedRequests: BlockedRequest[];
+  blockedCount: number;
 }
 
 const sessions = new Map<string, Session>();
@@ -58,10 +84,10 @@ function nowSourceMs(s: Session): number {
  * drive a locally installed browser instead — useful on hosts where the bundled
  * Chromium build is unavailable.
  */
-async function launchBrowser(headless: boolean): Promise<Browser> {
+async function launchBrowser(headless: boolean, args: string[]): Promise<Browser> {
   const channel = process.env.DEMOMOTION_BROWSER_CHANNEL?.trim() || undefined;
   try {
-    return await chromium.launch(channel ? { headless, channel } : { headless });
+    return await chromium.launch(channel ? { headless, channel, args } : { headless, args });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const hint = channel
@@ -71,12 +97,138 @@ async function launchBrowser(headless: boolean): Promise<Browser> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Network policy enforcement
+// ---------------------------------------------------------------------------
+//
+// ONE policy (`NetworkPolicy`), enforced at THREE points, because no single
+// hook in Playwright sees every request:
+//
+//  1. `context.route("**/*")` — every request Playwright intercepts, in every
+//     page, frame and worker of the context: navigations (from `goto`, a click,
+//     `window.open`), fetch/XHR, images, scripts, iframes. Verified NOT to see
+//     HTTP redirect hops: playwright-core 1.63 auto-continues a redirected
+//     request before any user route runs.
+//  2. A raw CDP `Fetch` session per page — Chromium pauses redirect hops there
+//     too, so this is where a 302 to a forbidden host is stopped. Verified to
+//     miss requests issued from inside a cross-process <iframe>, which (1) does
+//     see; a redirect hop that starts inside such a frame is the one case
+//     neither layer catches at PORT granularity (the resolver rules below still
+//     stop it at host granularity).
+//  3. `context.routeWebSocket("**/*")` — WebSocket handshakes, which neither
+//     (1) nor (2) intercept.
+//
+// Underneath, Chromium's own resolver is closed with `--host-resolver-rules`
+// (see `NetworkPolicy.chromiumArgs`): unlisted hostnames and literals cannot
+// resolve at all, and listed names are pinned to the address WE resolved. That
+// covers service workers (also blocked outright) and anything else that bypasses
+// interception, at host granularity.
+
+function recordBlock(s: Session, decision: Extract<Decision, { allowed: false }>, kind: BlockedRequest["kind"]): BlockedRequest {
+  const record: BlockedRequest = {
+    seq: ++s.blockedCount,
+    url: decision.url,
+    host: decision.host,
+    port: decision.port,
+    kind,
+    reason: decision.reason,
+    message: decision.message,
+    atMs: nowSourceMs(s)
+  };
+  s.blockedRequests.push(record);
+  if (s.blockedRequests.length > BLOCKED_REQUESTS_KEPT) s.blockedRequests.shift();
+  return record;
+}
+
+/**
+ * Stops a request the policy refused.
+ *
+ * A NAVIGATION is aborted with `aborted` (net::ERR_ABORTED): Chromium treats
+ * that as a cancelled navigation and stays on the current document — the
+ * recording keeps showing the page, not a `chrome-error://` screen. Anything
+ * else gets `blockedbyclient`, which is what an ad blocker returns and what
+ * page code already knows how to handle (a rejected fetch).
+ */
+function abortReason(isNavigation: boolean) {
+  return isNavigation ? ("aborted" as const) : ("blockedbyclient" as const);
+}
+
+async function installRequestGuard(s: Session) {
+  await s.context.route("**/*", async (route, request) => {
+    const decision = await s.policy.check(request.url());
+    try {
+      if (decision.allowed) {
+        await route.continue();
+      } else {
+        const isNavigation = request.isNavigationRequest();
+        recordBlock(s, decision, isNavigation ? "navigation" : "subresource");
+        await route.abort(abortReason(isNavigation));
+      }
+    } catch {
+      // The page navigated away or closed while the request was paused.
+    }
+  });
+
+  await s.context.routeWebSocket("**/*", async (ws) => {
+    // The policy speaks http(s); a WebSocket is the same host:port over ws(s).
+    const asHttp = ws.url().replace(/^ws(s?):/, "http$1:");
+    const decision = await s.policy.check(asHttp);
+    if (decision.allowed) {
+      ws.connectToServer();
+      return;
+    }
+    recordBlock(s, { ...decision, url: ws.url() }, "websocket");
+    ws.close({ code: 1008, reason: "blocked by DemoMotion network policy" });
+  });
+}
+
+/**
+ * The redirect layer (point 2 above). Playwright's route never sees a redirect
+ * hop, but Chromium's Fetch domain pauses it on every session that enabled
+ * interception — so a second, raw session gets to decide. Non-redirect requests
+ * are continued here untouched: the route layer already decided them, and a
+ * second decision would record the same block twice.
+ */
+async function installRedirectGuard(s: Session, page: Page) {
+  let cdp: CDPSession;
+  try {
+    cdp = await s.context.newCDPSession(page);
+    await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }] });
+  } catch {
+    return; // Page already gone.
+  }
+  cdp.on("Fetch.requestPaused", (event) => {
+    const requestId = event.requestId;
+    if (!event.redirectedRequestId) {
+      cdp.send("Fetch.continueRequest", { requestId }).catch(() => {});
+      return;
+    }
+    void s.policy.check(event.request.url).then(async (decision) => {
+      if (decision.allowed) {
+        await cdp.send("Fetch.continueRequest", { requestId });
+        return;
+      }
+      recordBlock(s, decision, "redirect");
+      const isNavigation = event.resourceType === "Document";
+      await cdp.send("Fetch.failRequest", { requestId, errorReason: isNavigation ? "Aborted" : "BlockedByClient" });
+    }).catch(() => {
+      // Request already gone (page navigated or closed).
+    });
+  });
+}
+
 export async function startSession(opts: {
   width: number;
   height: number;
   headless: boolean;
   fps?: number;
   deviceScaleFactor?: number;
+  /**
+   * Overrides for the network allowlist. Absent, the policy is read from
+   * `DEMOMOTION_ALLOWED_HOSTS` and names are resolved with `dns.lookup`.
+   * Tests inject both so they never touch the network.
+   */
+  network?: { allowedHosts?: string; lookup?: LookupFn };
 }) {
   const id = crypto.randomUUID();
   const dir = path.resolve("data/sessions", id);
@@ -87,28 +239,27 @@ export async function startSession(opts: {
   const deviceScaleFactor =
     opts.deviceScaleFactor ?? (Number(process.env.DEMOMOTION_DSF) || 1);
 
-  const browser = await launchBrowser(opts.headless);
+  // The policy is fixed BEFORE the browser exists: its listed names are
+  // resolved now, once, and the browser is launched pinned to those answers.
+  const policy = new NetworkPolicy({
+    allowedHosts: opts.network?.allowedHosts ?? process.env.DEMOMOTION_ALLOWED_HOSTS,
+    lookup: opts.network?.lookup
+  });
+  await policy.prepare();
+
+  const browser = await launchBrowser(opts.headless, policy.chromiumArgs());
   const context = await browser.newContext({
     viewport: { width: opts.width, height: opts.height },
     deviceScaleFactor,
+    // A service worker's fetches bypass request interception (Playwright
+    // documents this); the policy cannot see them, so they do not run.
+    serviceWorkers: "block",
     // Legacy path records a VFR webm; screencast path captures via CDP instead.
     ...(mode === "record-video"
       ? { recordVideo: { dir, size: { width: opts.width, height: opts.height } } }
       : {})
   });
   const page = await context.newPage();
-
-  let capture: ScreencastCapture | undefined;
-  if (mode === "screencast") {
-    capture = await ScreencastCapture.start({
-      page,
-      dir,
-      fps,
-      width: opts.width,
-      height: opts.height,
-      deviceScaleFactor
-    });
-  }
 
   const session: Session = {
     id,
@@ -121,9 +272,29 @@ export async function startSession(opts: {
     height: opts.height,
     fps,
     mode,
-    capture,
-    actions: []
+    actions: [],
+    policy,
+    blockedRequests: [],
+    blockedCount: 0
   };
+
+  // Guards go in before the first navigation can happen — and before the
+  // screencast, so nothing the capture does is ever outside the policy.
+  await installRequestGuard(session);
+  await installRedirectGuard(session, page);
+  context.on("page", (popup) => { void installRedirectGuard(session, popup); });
+
+  if (mode === "screencast") {
+    session.capture = await ScreencastCapture.start({
+      page,
+      dir,
+      fps,
+      width: opts.width,
+      height: opts.height,
+      deviceScaleFactor
+    });
+  }
+
   sessions.set(id, session);
   return session;
 }
@@ -144,21 +315,36 @@ export function captureTimeMs(id: string): number {
   return nowSourceMs(getSession(id));
 }
 
-function assertAllowedUrl(rawUrl: string) {
-  const url = new URL(rawUrl);
-  if (!["http:", "https:"].includes(url.protocol)) throw new Error(`Unsupported URL protocol: ${url.protocol}`);
-  const configured = (process.env.DEMOMOTION_ALLOWED_HOSTS ?? "").split(",").map((v) => v.trim()).filter(Boolean);
-  if (configured.length && !configured.includes(url.hostname)) {
-    throw new Error(`Host not allowed by DEMOMOTION_ALLOWED_HOSTS: ${url.hostname}`);
-  }
-  return url.toString();
-}
-
+/**
+ * Navigates. The route layer is the authority; the check up front only spares
+ * the agent a navigation that would be aborted anyway, and gives it the
+ * policy's own message instead of Playwright's `net::ERR_ABORTED`. A refusal
+ * is recorded like any other block, so `session_status` shows it.
+ *
+ * When the navigation itself is stopped by the route or redirect layer (a 302
+ * to a forbidden host, say), Playwright rejects with a generic network error;
+ * that is translated back into the recorded block's message, which names the
+ * host that was refused and the variable to set.
+ */
 export async function goto(id: string, url: string) {
-  const safeUrl = assertAllowedUrl(url);
   const s = getSession(id);
+  const decision = await s.policy.check(url);
+  if (!decision.allowed) {
+    recordBlock(s, decision, "navigation");
+    throw new Error(decision.message);
+  }
+  const safeUrl = decision.url;
   const atMs = nowSourceMs(s);
-  await s.page.goto(safeUrl, { waitUntil: "networkidle" });
+  const blockedBefore = s.blockedCount;
+  try {
+    await s.page.goto(safeUrl, { waitUntil: "networkidle" });
+  } catch (error) {
+    const blocked = s.blockedRequests.find(
+      (b) => b.seq > blockedBefore && (b.kind === "navigation" || b.kind === "redirect")
+    );
+    if (blocked) throw new Error(blocked.message, { cause: error });
+    throw error;
+  }
   s.actions.push({ id: crypto.randomUUID(), type: "goto", atMs, durationMs: nowSourceMs(s) - atMs, url: safeUrl });
 }
 
@@ -441,7 +627,10 @@ export async function stopSession(id: string) {
     frameCount,
     durationMs,
     videoPath,
-    actions: s.actions
+    actions: s.actions,
+    allowedHosts: s.policy.describe(),
+    blockedRequests: s.blockedRequests,
+    blockedCount: s.blockedCount
   };
   const manifestPath = path.join(s.dir, "capture.json");
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
@@ -457,7 +646,10 @@ export function status(id: string) {
     elapsedMs: nowSourceMs(s),
     url: s.page.url(),
     actions: s.actions.length,
-    viewport: { width: s.width, height: s.height }
+    viewport: { width: s.width, height: s.height },
+    allowedHosts: s.policy.describe(),
+    blockedRequests: s.blockedRequests,
+    blockedCount: s.blockedCount
   };
 }
 

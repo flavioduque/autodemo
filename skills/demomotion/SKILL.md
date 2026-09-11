@@ -110,7 +110,8 @@ A demo with more than seven scenes is two demos.
 `session_start` — defaults `1920x1080`, `headless: false` for local production.
 Returns `sessionId`; every browser tool needs it.
 
-- `browser_goto` — `http`/`https` only, subject to `DEMOMOTION_ALLOWED_HOSTS`.
+- `browser_goto` — `http`/`https` only, subject to `DEMOMOTION_ALLOWED_HOSTS`
+  (default: `localhost, 127.0.0.1, ::1`, every port).
 - `browser_click` / `browser_fill` — record normalized target coordinates. These
   drive both the auto-zoom and the synthetic cursor.
 - `browser_wait` — 50–30000 ms. Only for a real transition or deliberate pacing.
@@ -330,5 +331,12 @@ Every tool answers with a JSON body. A failure comes back as a normal result wit
   `demo_finalize` both end it) or never existed.
 - `Cannot render: the project's edit list keeps no material` — your `editList`
   cut everything.
-- `Host not allowed by DEMOMOTION_ALLOWED_HOSTS` — the operator restricted
-  navigation; ask, do not work around it.
+- `DemoMotion refused <url>: "<host:port>" is not in DEMOMOTION_ALLOWED_HOSTS
+  (currently …)` — navigation off the allowlist fails **by design**, at the
+  network layer: the first navigation, a redirect the page answers with, a link
+  you click, a `fetch` the page makes, a WebSocket. A refused navigation fails
+  the call and the page stays put; a refused sub-resource is silently aborted
+  for the page. `session_status` exposes every denial as `blockedRequests`
+  (`kind`, `url`, `host`, `reason`) — read it after a step that behaved
+  strangely. Do not look for another spelling of the host; ask the operator to
+  extend `DEMOMOTION_ALLOWED_HOSTS` and start a new session.

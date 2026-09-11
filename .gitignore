@@ -10,9 +10,6 @@ dist
 data/sessions/*
 !data/sessions/.gitkeep
 
-# artefatos temporários do render (renderVideo copia o vídeo-fonte para cá)
-apps/studio/public/__demomotion/
-
 # mídia de teste gerada sob demanda (apps/mcp-server/test/fixture-media.ts)
 data/test-media/
 

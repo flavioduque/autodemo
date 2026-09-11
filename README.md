@@ -197,5 +197,3 @@ Issues and PRs are welcome. The test discipline is strict on purpose: every beha
 ## License
 
 DemoMotion source: **MIT**. The HyperFrames compositor on the render path is Apache-2.0. Both are permissive — DemoMotion adds no per-seat cost for the teams that adopt it.
-
-> `apps/studio` still contains the superseded Remotion composition (no longer on the render path). Remotion carries its own commercial licensing terms; it will be removed, and until then you can delete `apps/studio` if you prefer a Remotion-free tree.

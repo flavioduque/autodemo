@@ -93,36 +93,25 @@ Two design decisions do the heavy lifting:
 
 ## Quick start
 
-Requires **Node.js 22+** and **pnpm 10**.
-
-```bash
-pnpm install
-pnpm --filter @demomotion/mcp-server exec playwright install chromium
-pnpm typecheck && pnpm test && pnpm build
-```
-
-> The Playwright install **must** be scoped with `--filter`. Playwright is a dependency of `apps/mcp-server`, not the workspace root; a bare `pnpm exec playwright ...` can fall through to an unrelated Playwright on `PATH` and provision the wrong browser cache.
-
-Point your MCP client at the `tsx` entry directly (not `pnpm dev:mcp` — pnpm prints a banner on stdout, and an MCP stdio transport needs stdout to carry JSON-RPC only):
+Requires **Node.js 22+**, **ffmpeg** on `PATH`, and a Chromium. Add to your MCP client:
 
 ```json
 {
   "mcpServers": {
     "demomotion": {
-      "command": "/abs/path/demomotion-mcp/apps/mcp-server/node_modules/.bin/tsx",
-      "args": ["/abs/path/demomotion-mcp/apps/mcp-server/src/index.ts"],
-      "cwd": "/abs/path/demomotion-mcp",
+      "command": "npx",
+      "args": ["-y", "demomotion"],
       "env": { "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1" }
     }
   }
 }
 ```
 
-On a host where Playwright has no bundled Chromium build (e.g. macOS 13), drive a locally installed browser instead — no downgrade, no download:
+The first run downloads the package and its renderer (~400 MB, dominated by HyperFrames' `onnxruntime-node`). If the server logs `no usable capture browser`, either install Playwright's Chromium (`npx playwright@1.63.0 install chromium`) or drive an installed browser with `"env": { "DEMOMOTION_BROWSER_CHANNEL": "chrome" }` — required on macOS 13, which has no bundled build.
 
-```bash
-DEMOMOTION_BROWSER_CHANNEL=chrome pnpm dev:mcp
-```
+Sessions, captures and renders are written under `~/.demomotion/sessions/` (override with `DEMOMOTION_HOME`); every tool result returns the absolute path. `demomotion render project.json --out demo.mp4` re-renders an edited project from the shell.
+
+Contributors: `pnpm install && pnpm --filter demomotion exec playwright install chromium && pnpm typecheck && pnpm test && pnpm build`; `pnpm dev:mcp` runs the server from source.
 
 ## The MCP tool surface
 

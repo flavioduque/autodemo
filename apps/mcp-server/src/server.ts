@@ -1,5 +1,4 @@
 import { McpServer } from "@modelcontextprotocol/server";
-import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 import {
   startSession, goto, click, fill, wait, screenshot, stopSession, status, scroll, keypress, inspectPage
@@ -7,7 +6,7 @@ import {
 import { buildProject, updateProject } from "./project.js";
 import { renderVideo } from "./render.js";
 import fs from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { VERSION } from "./versions.js";
 
 const result = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }]
@@ -111,10 +110,15 @@ export const projectUpdateInput = z.object({
   captions: z.array(captionInput).optional()
 });
 
-function createServer() {
+/**
+ * Builds the MCP server with the full tool surface. Exported for the CLI
+ * (`demomotion mcp`) and for tests; nothing here touches stdio, so importing
+ * this module never starts a transport.
+ */
+export function createServer() {
   const server = new McpServer({
     name: "demomotion",
-    version: "0.2.0",
+    version: VERSION,
     description: "Agent-first browser capture, automated timeline generation and HyperFrames rendering."
   });
 
@@ -242,11 +246,4 @@ function createServer() {
   }, async ({projectPath, outputPath}) => result({ outputPath: await renderVideo(projectPath, outputPath) }));
 
   return server;
-}
-
-// Only speak stdio when this file is the process entrypoint. Importing it
-// (a test inspecting the tool surface, for instance) must not start a server.
-if (process.argv[1] && process.argv[1] === fileURLToPath(import.meta.url)) {
-  void serveStdio(createServer);
-  console.error("DemoMotion MCP running on stdio");
 }

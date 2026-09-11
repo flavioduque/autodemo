@@ -1,17 +1,50 @@
 {
-  "name": "@demomotion/mcp-server",
+  "name": "demomotion",
   "version": "0.2.0",
+  "description": "MCP server that lets an AI agent operate your web app, record it deterministically and render a polished product-demo MP4 \u2014 no human in the edit.",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flavioduque/demomotion.git",
+    "directory": "apps/mcp-server"
+  },
+  "homepage": "https://github.com/flavioduque/demomotion#readme",
+  "bugs": "https://github.com/flavioduque/demomotion/issues",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "agentic",
+    "llm-tools",
+    "demo-videos",
+    "product-demos",
+    "screen-recording",
+    "video-generation",
+    "video-as-code",
+    "playwright",
+    "automation",
+    "devtools",
+    "typescript"
+  ],
+  "bin": {
+    "demomotion": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json --noEmit && node scripts/build.mjs",
+    "prepack": "npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --import ./test/setup-env.ts --test test/*.test.ts",
+    "test:pack": "node --import tsx --import ./test/setup-env.ts --test test/pack.test.ts"
   },
   "dependencies": {
-    "@demomotion/compositor": "workspace:*",
-    "@demomotion/core": "workspace:*",
-    "@demomotion/schema": "workspace:*",
     "@modelcontextprotocol/server": "2.0.0",
     "gsap": "^3.15.0",
     "hyperframes": "^0.8.33",
@@ -19,7 +52,11 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
+    "@demomotion/compositor": "workspace:*",
+    "@demomotion/core": "workspace:*",
+    "@demomotion/schema": "workspace:*",
     "@types/node": "^24.3.1",
+    "esbuild": "^0.28.2",
     "tsx": "^4.20.5",
     "typescript": "^6.0.0"
   }

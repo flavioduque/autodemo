@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { projectUpdateInput, browserFillInput } from "../src/index.ts";
+import { projectUpdateInput, browserFillInput } from "../src/server.ts";
 
 // The MCP tool surface is the only interface this product has. What the tool
 // refuses to accept cannot be edited at all, so the tool schema is a seam in

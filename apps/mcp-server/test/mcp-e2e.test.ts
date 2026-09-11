@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn, execFile, type ChildProcess } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
 import net from "node:net";
@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { McpStdioClient, step } from "./mcp-stdio-client.ts";
 
 // ---------------------------------------------------------------------------
 // The ONLY test that talks to DemoMotion the way a real MCP client does.
@@ -23,7 +24,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // plus ffmpeg/ffprobe on PATH, so it is gated:
 //
 //   DEMOMOTION_E2E_TESTS=1 DEMOMOTION_BROWSER_CHANNEL=chrome \
-//     pnpm --filter @demomotion/mcp-server test
+//     pnpm --filter demomotion test
 //
 // Progress markers go to stderr as the calls happen; DEMOMOTION_E2E_DEBUG=1 also
 // forwards the spawned server's own stderr.
@@ -35,7 +36,7 @@ const TIMEOUT = 1_500_000;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
-const SERVER_ENTRY = path.resolve(HERE, "../src/index.ts");
+const SERVER_ENTRY = path.resolve(HERE, "../src/cli.ts");
 const FIXTURE_SERVER = path.join(REPO, "fixtures/target-app/server.mjs");
 const REPO_SESSIONS = path.join(REPO, "data/sessions");
 
@@ -68,133 +69,22 @@ const EXPECTED_TOOLS = [
  */
 const INVOKED = new Set<string>();
 
-type ToolResult = { isError: boolean; text: string; payload: any };
-
-/** Longest a single JSON-RPC call may take before the test calls it a hang. */
-const DEFAULT_CALL_TIMEOUT_MS = 120_000;
 const RENDER_CALL_TIMEOUT_MS = 900_000;
 
-/** Progress marker on stderr — the only way to see where a wire test is stuck. */
-function step(message: string) {
-  process.stderr.write(`[e2e ${new Date().toISOString().slice(11, 19)}] ${message}\n`);
-}
-
-/** A minimal MCP client: newline-delimited JSON-RPC over the child's stdio. */
-class McpStdioClient {
-  private buffer = "";
-  private nextId = 1;
-  private readonly pending = new Map<number, (msg: any) => void>();
-
-  private constructor(private readonly child: ChildProcess) {
-    child.stdout!.setEncoding("utf8");
-    child.stdout!.on("data", (chunk: string) => this.onData(chunk));
-    child.stderr!.on("data", (d) => {
-      if (process.env.DEMOMOTION_E2E_DEBUG === "1") process.stderr.write(`[server] ${d}`);
-    });
-  }
-
-  static async start(cwd: string): Promise<McpStdioClient> {
-    const child = spawn(process.execPath, ["--import", TSX_LOADER, SERVER_ENTRY], {
-      cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env }
-    });
-    const client = new McpStdioClient(child);
-    const init = await client.request("initialize", {
-      protocolVersion: "2025-06-18",
-      capabilities: {},
-      clientInfo: { name: "demomotion-e2e", version: "0" }
-    });
-    assert.equal(init.serverInfo?.name, "demomotion", `unexpected serverInfo: ${JSON.stringify(init)}`);
-    client.notify("notifications/initialized", {});
-    return client;
-  }
-
-  private onData(chunk: string) {
-    this.buffer += chunk;
-    let index: number;
-    while ((index = this.buffer.indexOf("\n")) >= 0) {
-      const line = this.buffer.slice(0, index).trim();
-      this.buffer = this.buffer.slice(index + 1);
-      if (!line) continue;
-      const message = JSON.parse(line);
-      const resolve = message.id != null ? this.pending.get(message.id) : undefined;
-      if (resolve) {
-        this.pending.delete(message.id);
-        resolve(message);
-      }
-    }
-  }
-
-  /**
-   * Resolves with the JSON-RPC `result`; rejects on a transport-level `error`.
-   * A call that never answers rejects too — a wire that hangs is a failure, and
-   * a test that waited forever would report nothing at all.
-   */
-  request(method: string, params: unknown, timeoutMs = DEFAULT_CALL_TIMEOUT_MS): Promise<any> {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`${method} did not answer within ${timeoutMs} ms`));
-      }, timeoutMs);
-      this.pending.set(id, (message) => {
-        clearTimeout(timer);
-        if (message.error) reject(new Error(`${method} failed: ${JSON.stringify(message.error)}`));
-        else resolve(message.result);
-      });
-      this.child.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-    });
-  }
-
-  notify(method: string, params: unknown) {
-    this.child.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
-  }
-
-  /**
-   * Calls a tool and decodes the result BODY.
-   *
-   * An MCP tool failure is a normal result carrying `isError: true`, not a
-   * transport failure — a test that only checked "no exception was thrown"
-   * would pass on every single broken tool. Nothing here throws on `isError`;
-   * the caller decides which half it is asserting.
-   */
-  async callTool(name: string, args: Record<string, unknown>, timeoutMs?: number): Promise<ToolResult> {
-    step(`-> ${name}`);
-    INVOKED.add(name);
-    const result = await this.request("tools/call", { name, arguments: args }, timeoutMs);
-    step(`<- ${name}${result.isError === true ? " (isError)" : ""}`);
-    const text = result?.content?.[0]?.text ?? "";
-    assert.equal(result?.content?.[0]?.type, "text", `${name} returned no text content: ${JSON.stringify(result)}`);
-    let payload: any = undefined;
-    if (result.isError !== true) {
-      payload = JSON.parse(text); // every tool answers with JSON.stringify'd data
-    }
-    return { isError: result.isError === true, text, payload };
-  }
-
-  /** Calls a tool and asserts it SUCCEEDED, surfacing the error body if not. */
-  async callOk(name: string, args: Record<string, unknown>, timeoutMs?: number): Promise<any> {
-    const result = await this.callTool(name, args, timeoutMs);
-    assert.equal(result.isError, false, `${name} came back as an MCP error: ${result.text}`);
-    return result.payload;
-  }
-
-  /**
-   * Tears the server down for real. SIGTERM alone left the child alive in an
-   * early version of this test, and a live child keeps the runner's event loop
-   * open — the process then hangs AFTER the assertions, and node:test never
-   * flushes the failure. SIGKILL, then drop the stream handles.
-   */
-  close() {
-    this.child.stdout?.removeAllListeners();
-    this.child.stderr?.removeAllListeners();
-    this.child.stdout?.destroy();
-    this.child.stderr?.destroy();
-    this.child.stdin?.destroy();
-    this.child.kill("SIGKILL");
-    this.child.unref();
-  }
+/**
+ * Spawns the server the way the README used to tell MCP clients to: the TypeScript
+ * entry under tsx. Sessions are pinned to the test's own cwd with DEMOMOTION_HOME
+ * so every path the server reports can be checked to stay inside it.
+ */
+function startServer(cwd: string): Promise<McpStdioClient> {
+  return McpStdioClient.start({
+    command: process.execPath,
+    args: ["--import", TSX_LOADER, SERVER_ENTRY],
+    cwd,
+    env: { ...process.env, DEMOMOTION_HOME: cwd },
+    clientName: "demomotion-e2e",
+    onToolCall: (name) => INVOKED.add(name)
+  });
 }
 
 async function freePort(): Promise<number> {
@@ -269,7 +159,7 @@ test("a real MCP client drives capture, build, edit and render end to end over s
   // inside the temp cwd" assertions below compare the two.
   const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-")));
   const fixture = await startFixtureServer();
-  const client = await McpStdioClient.start(cwd);
+  const client = await startServer(cwd);
   try {
     // --- tools/list: the published surface -------------------------------
     const listed = await client.request("tools/list", {});
@@ -465,7 +355,7 @@ test("demo_finalize takes a live session all the way to an MP4 in one call",
   const sessionsBefore = await repoSessionDirs();
   const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-final-")));
   const fixture = await startFixtureServer();
-  const client = await McpStdioClient.start(cwd);
+  const client = await startServer(cwd);
   try {
     const { sessionId } = await client.callOk("session_start", { width: WIDTH, height: HEIGHT, headless: true });
     await client.callOk("browser_goto", { sessionId, url: `${fixture.origin}/` });

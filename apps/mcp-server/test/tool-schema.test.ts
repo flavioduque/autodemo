@@ -69,3 +69,32 @@ test("browser_fill types by default, and instant is an explicit opt-out", () => 
     sessionId: "s", selector: "#name", value: "Ada", typeDelayMs: 5000
   }).success, false);
 });
+
+// Reframing is only worth having if it can be applied to a capture that already
+// exists — that is the whole claim of the source-of-truth model. So the output
+// frame has to be reachable through project_update, not only through a recording
+// that was set up vertically in the first place.
+test("project_update accepts an output frame, and refuses half of one", () => {
+  // Positive half: a vertical output frame goes through intact.
+  const parsed = projectUpdateInput.parse({
+    projectPath: "/tmp/project.json",
+    output: { width: 1080, height: 1920 }
+  });
+  assert.deepEqual(parsed.output, { width: 1080, height: 1920 });
+
+  // Positive half, the other direction: leaving it out is still legal and still
+  // means "do not touch the frame".
+  assert.equal("output" in projectUpdateInput.parse({ projectPath: "/tmp/project.json", title: "T" }), false);
+
+  // Negative half: a width with no height is not a frame.
+  assert.equal(projectUpdateInput.safeParse({
+    projectPath: "/tmp/project.json", output: { width: 1080 }
+  }).success, false);
+  // Negative half: a frame nobody can watch is refused, at both ends.
+  assert.equal(projectUpdateInput.safeParse({
+    projectPath: "/tmp/project.json", output: { width: 1080, height: 40 }
+  }).success, false);
+  assert.equal(projectUpdateInput.safeParse({
+    projectPath: "/tmp/project.json", output: { width: 99999, height: 1920 }
+  }).success, false);
+});

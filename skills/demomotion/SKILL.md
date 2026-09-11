@@ -42,9 +42,26 @@ Decide before recording: audience, the one capability being shown, target
 duration, the critical path through the UI, and which fields must never be on
 screen. Do not wander into unrelated product areas.
 
-Frame size is decided here too and cannot be changed later: the video is rendered
-at the session's `width` x `height`. There is no reframing pass, so a vertical cut
-means recording a vertical session.
+Frame size is **two** decisions, not one: the frame you RECORD at, and the frame
+you PUBLISH at. They no longer have to be the same — `project_update` takes an
+`output` frame, and the camera crops a rectangle of that aspect ratio out of the
+capture. Decide both here, because only the first one is expensive to change.
+
+**Two ways to get a vertical cut. They are not interchangeable:**
+
+| | Record vertical | Record 16:9, reframe to 9:16 |
+|---|---|---|
+| How | `session_start` with `width: 1080, height: 1920` | `session_start` at `1920x1080`, then `project_update` with `output: {"width": 1080, "height": 1920}` |
+| What the viewer sees | the app's **mobile layout** — the real responsive breakpoint, nothing cropped | the **desktop UI**, cropped to 31.6% of its width |
+| Right when | the product has a mobile layout and the demo is about using it on a phone | the product is desktop-first, or the same capture must also ship as a 16:9 video |
+| Cost | a second recording if you also want a 16:9 cut | ~68% of the frame is off screen at all times |
+
+Reframing keeps the crop centred on whatever is being clicked or filled and
+drifts smoothly between interactions, so a focused flow survives it. What it
+cannot do is show two things that are far apart at once: a dashboard whose point
+is the whole layout, or a flow that jumps between a left sidebar and a right
+panel, comes out as a camera swinging back and forth. Record vertical for those,
+or keep them 16:9.
 
 ## 2. Ask the user for the pacing — do not guess it
 
@@ -60,12 +77,13 @@ which you recommend for their stated objective:
 |---|---|---|
 | **Product demo** | ~25 s | Launch video, README hero, sales. Brisk but followable. The default recommendation. |
 | **Tutorial** | ~40 s | Onboarding, support, docs — the viewer will REPRODUCE the steps. |
-| **Social / ad** | ~15 s | Autoplay without sound. Only the climax survives. |
+| **Social / ad** | ~15 s | Autoplay without sound, in a **vertical** feed. Only the climax survives. |
 
 Then apply the preset's numbers. These are the knobs, not decoration:
 
 | Knob | Product demo | Tutorial | Social |
 |---|---|---|---|
+| `output` frame on `project_update` | omit (the capture's own frame) | omit | `{"width": 1080, "height": 1920}` — a 16:9 file fits no feed |
 | `typeDelayMs` on `browser_fill` | 40 | 55 | 30, and only on the first field |
 | `browser_wait` after a navigation | 1200 ms | 2000 ms | 700 ms |
 | `browser_wait` between fields | 900 ms | 1500 ms | 300 ms |
@@ -147,8 +165,32 @@ Treat all of it as a first pass.
 ## 6. `project_update` — the editing pass
 
 A patch against `project.json`. Omitted fields keep their value. `style` is
-**merged** field by field; `zooms`, `editList`, `callouts` and `captions` are
-**replaced wholesale** — send the complete array you want, not a delta.
+**merged** field by field; `output`, `zooms`, `editList`, `callouts` and
+`captions` are **replaced wholesale** — send the complete value you want, not a
+delta.
+
+### `output` — the frame the video is published at
+
+```json
+{"width": 1080, "height": 1920}
+```
+
+Send it and the camera reframes: it takes the largest rectangle of **that** aspect
+ratio that fits inside the capture and walks it across your interactions. Like
+every other field, omitting it in a patch LEAVES IT AS IT IS — to go back to the
+capture's own frame, send the capture's own `width`/`height`.
+
+- `width`/`height` in `project.json` stay the **recording's** frame. They are
+  what every normalized `x`/`y` in the project is measured against, so nothing
+  you authored needs to move when you reframe.
+- Reframing is an edit, not a re-record. Render the same capture at `1920x1080`
+  and at `1080x1920` and you have both cuts from one session.
+- The crop is centred on the action being interacted with, clamped to the edges
+  of the capture (an element against the right margin frames flush right, never
+  against empty space), and it eases between actions instead of snapping.
+- The zoom still applies, **inside** the crop. Keep `scale` low on a reframed
+  cut: the crop is already a 3.2x magnification of the width.
+- 9:16 is `1080x1920`. 4:5 (feed post) is `1080x1350`. 1:1 is `1080x1080`.
 
 ### `editList` — cuts and speed ramps, one model
 
@@ -262,7 +304,12 @@ project). Re-render as many times as you like; the capture is untouched.
 
 ## 8. Validate before you hand it over
 
-- The file exists and its duration matches the `editList` arithmetic.
+- The file exists, its duration matches the `editList` arithmetic, and its frame
+  is the one you meant to publish (a "social" cut that came out 16:9 is wrong
+  before anyone watches it).
+- On a reframed cut: at every action the control being used is inside the frame,
+  and the camera drifts rather than swings. If it swings, the flow is too spread
+  out for a crop — record vertical instead.
 - No credential, token or real customer datum is on screen.
 - Every caption is fully readable at its length, and none is cut mid-sentence.
 - Zooms frame the target instead of clipping it.

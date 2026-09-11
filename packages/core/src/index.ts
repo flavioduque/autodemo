@@ -1,11 +1,23 @@
-import type { DemoAction, DemoZoom } from "@demomotion/schema";
+import {
+  type DemoAction, type DemoZoom, type DurationMs,
+  SOURCE_ZERO, durationMs, addMs, subMs, minOf, maxOf, captureEnd
+} from "@demomotion/schema";
 
-export function buildAutoZooms(actions: DemoAction[], durationMs: number): DemoZoom[] {
+/** How far ahead of the interaction a zoom opens: the eye arrives before the click. */
+const ZOOM_LEAD_MS: DurationMs = durationMs(220);
+/** How long a zoom stays on a click, and on a fill (typing takes longer to read). */
+const ZOOM_CLICK_HOLD_MS: DurationMs = durationMs(1200);
+const ZOOM_FILL_HOLD_MS: DurationMs = durationMs(1450);
+/** Two zooms closer than this (and near each other on screen) merge into one. */
+const ZOOM_MERGE_GAP_MS: DurationMs = durationMs(120);
+
+export function buildAutoZooms(actions: DemoAction[], captureDurationMs: DurationMs): DemoZoom[] {
+  const end = captureEnd(captureDurationMs);
   const candidates = actions
     .filter((a) => (a.type === "click" || a.type === "fill") && typeof a.x === "number" && typeof a.y === "number")
     .map((a) => ({
-      fromMs: Math.max(0, a.atMs - 220),
-      toMs: Math.min(durationMs, a.atMs + (a.type === "fill" ? 1450 : 1200)),
+      fromMs: maxOf(SOURCE_ZERO, subMs(a.atMs, ZOOM_LEAD_MS)),
+      toMs: minOf(end, addMs(a.atMs, a.type === "fill" ? ZOOM_FILL_HOLD_MS : ZOOM_CLICK_HOLD_MS)),
       x: a.x!,
       y: a.y!,
       scale: a.type === "fill" ? 1.22 : 1.36
@@ -15,8 +27,8 @@ export function buildAutoZooms(actions: DemoAction[], durationMs: number): DemoZ
   const merged: DemoZoom[] = [];
   for (const current of candidates) {
     const last = merged.at(-1);
-    if (last && current.fromMs <= last.toMs + 120 && distance(last, current) < 0.16) {
-      last.toMs = Math.max(last.toMs, current.toMs);
+    if (last && current.fromMs <= addMs(last.toMs, ZOOM_MERGE_GAP_MS) && distance(last, current) < 0.16) {
+      last.toMs = maxOf(last.toMs, current.toMs);
       last.x = (last.x + current.x) / 2;
       last.y = (last.y + current.y) / 2;
       last.scale = Math.max(last.scale, current.scale);

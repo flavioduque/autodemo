@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import type { DemoAction } from "@demomotion/schema";
+import { type DemoAction, type SourceTimeMs, type DurationMs, SOURCE_ZERO, ZERO_MS, sourceMs, durationMs, spanMs, maxOf } from "@demomotion/schema";
 import { ScreencastCapture } from "./capture-adapter.js";
 import { NetworkPolicy, type Decision, type LookupFn } from "./network-policy.js";
 import { PLAYWRIGHT_VERSION } from "./versions.js";
@@ -38,7 +38,7 @@ export interface BlockedRequest {
   kind: "navigation" | "redirect" | "subresource" | "websocket";
   reason: string;
   message: string;
-  atMs: number;
+  atMs: SourceTimeMs;
 }
 
 /** Blocked requests kept per session; a page that hammers a forbidden host must not grow memory. */
@@ -88,9 +88,10 @@ export function sessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
  * `atMs` maps to a frame index by construction. In legacy record-video mode it
  * falls back to wall-clock elapsed, which is exactly the mismatch being fixed.
  */
-function nowSourceMs(s: Session): number {
+function nowSourceMs(s: Session): SourceTimeMs {
   if (s.mode === "screencast" && s.capture) return s.capture.nowSourceMs();
-  return Date.now() - s.startedAt;
+  // INGRESS (legacy mode only): wall-clock elapsed stands in for the capture's clock.
+  return sourceMs(Date.now() - s.startedAt);
 }
 
 /**
@@ -328,7 +329,7 @@ export function getSession(id: string) {
  * instant it triggers an independent visual signal, without duplicating the
  * private time-base logic.
  */
-export function captureTimeMs(id: string): number {
+export function captureTimeMs(id: string): SourceTimeMs {
   return nowSourceMs(getSession(id));
 }
 
@@ -362,7 +363,7 @@ export async function goto(id: string, url: string) {
     if (blocked) throw new Error(blocked.message, { cause: error });
     throw error;
   }
-  s.actions.push({ id: crypto.randomUUID(), type: "goto", atMs, durationMs: nowSourceMs(s) - atMs, url: safeUrl });
+  s.actions.push({ id: crypto.randomUUID(), type: "goto", atMs, durationMs: spanMs(nowSourceMs(s), atMs), url: safeUrl });
 }
 
 // ---------------------------------------------------------------------------
@@ -523,7 +524,7 @@ export async function click(id: string, selector: string, label?: string) {
     id: crypto.randomUUID(),
     type: "click",
     atMs,
-    durationMs: nowSourceMs(s) - atMs,
+    durationMs: spanMs(nowSourceMs(s), atMs),
     selector,
     label,
     x: box ? (box.x + box.width / 2) / s.width : undefined,
@@ -581,7 +582,8 @@ export async function fill(
     // compositor's zoom and caption windows are derived from, and a typed fill
     // reported as instant would desynchronize both. Never a ceiling — `atMs`
     // stays on the frame line, which is the invariant that matters.
-    durationMs: Math.max(nowSourceMs(s) - atMs, Date.now() - startedWallMs),
+    // INGRESS: the wall-clock floor enters as a `DurationMs` here.
+    durationMs: maxOf(spanMs(nowSourceMs(s), atMs), durationMs(Date.now() - startedWallMs)),
     selector,
     value: "[redacted]",
     label,
@@ -594,7 +596,8 @@ export async function wait(id: string, ms: number) {
   const s = getSession(id);
   const atMs = nowSourceMs(s);
   await s.page.waitForTimeout(ms);
-  s.actions.push({ id: crypto.randomUUID(), type: "wait", atMs, durationMs: ms });
+  // INGRESS: the caller's wait length enters the timeline as a `DurationMs`.
+  s.actions.push({ id: crypto.randomUUID(), type: "wait", atMs, durationMs: durationMs(ms) });
 }
 
 export async function screenshot(id: string, name = "screen.png") {
@@ -602,7 +605,7 @@ export async function screenshot(id: string, name = "screen.png") {
   const safe = name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const file = path.join(s.dir, safe);
   await s.page.screenshot({ path: file, fullPage: false });
-  s.actions.push({ id: crypto.randomUUID(), type: "screenshot", atMs: nowSourceMs(s), durationMs: 0, label: safe });
+  s.actions.push({ id: crypto.randomUUID(), type: "screenshot", atMs: nowSourceMs(s), durationMs: ZERO_MS, label: safe });
   return file;
 }
 
@@ -610,7 +613,7 @@ export async function stopSession(id: string) {
   const s = getSession(id);
 
   let videoPath: string | null;
-  let durationMs: number;
+  let captureDurationMs: DurationMs;
   let width = s.width;
   let height = s.height;
   let fps = s.fps;
@@ -621,7 +624,7 @@ export async function stopSession(id: string) {
     // session and the on-disk frames both need the context alive).
     const result = await s.capture.stop();
     videoPath = result.artifact.path;
-    durationMs = result.durationMs;
+    captureDurationMs = result.durationMs;
     width = result.width;
     height = result.height;
     fps = result.fps;
@@ -630,7 +633,7 @@ export async function stopSession(id: string) {
     await s.browser.close();
   } else {
     const video = s.page.video();
-    durationMs = nowSourceMs(s);
+    captureDurationMs = spanMs(nowSourceMs(s), SOURCE_ZERO);
     await s.context.close();
     videoPath = video ? await video.path() : null;
     await s.browser.close();
@@ -642,7 +645,7 @@ export async function stopSession(id: string) {
     height,
     fps,
     frameCount,
-    durationMs,
+    durationMs: captureDurationMs,
     videoPath,
     actions: s.actions,
     allowedHosts: s.policy.describe(),
@@ -732,7 +735,7 @@ export async function scroll(id: string, deltaY: number, deltaX = 0) {
   await aimWheelAtScrollableFrame(s, deltaX, deltaY);
   await s.page.mouse.wheel(deltaX, deltaY);
   await s.page.waitForTimeout(150);
-  s.actions.push({ id: crypto.randomUUID(), type: "scroll", atMs, durationMs: nowSourceMs(s) - atMs, deltaX, deltaY });
+  s.actions.push({ id: crypto.randomUUID(), type: "scroll", atMs, durationMs: spanMs(nowSourceMs(s), atMs), deltaX, deltaY });
 }
 
 /**
@@ -746,7 +749,7 @@ export async function keypress(id: string, key: string) {
   const s = getSession(id);
   const atMs = nowSourceMs(s);
   await s.page.keyboard.press(key);
-  s.actions.push({ id: crypto.randomUUID(), type: "keypress", atMs, durationMs: nowSourceMs(s) - atMs, key });
+  s.actions.push({ id: crypto.randomUUID(), type: "keypress", atMs, durationMs: spanMs(nowSourceMs(s), atMs), key });
 }
 
 /**

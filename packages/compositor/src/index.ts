@@ -1,10 +1,29 @@
-import type { DemoProject } from "@demomotion/schema";
-import { outputSize, sourceSize } from "@demomotion/schema";
+import type { DemoProject, SourceTimeMs, OutputTimeMs, DurationMs } from "@demomotion/schema";
+import { outputSize, sourceSize, OUTPUT_ZERO, SOURCE_ZERO, ZERO_MS, addMs, subMs, spanMs, atSpeed, scaleMs, minOf, maxOf, outputEnd } from "@demomotion/schema";
 import { sourceToOutput, totalOutputMs, cursorTrack, framingTrack, referenceCrop, CURSOR_APPROACH_MS, CURSOR_PULSE_MS, type EditList } from "@demomotion/core";
 
+// --- Seconds exist only at the emit boundary. -------------------------------
+//
+// Everything the document carries is in OUTPUT seconds (a `data-start`, a
+// camera keyframe, a crossfade) except one attribute, `data-media-start`, which
+// is a position inside the source clip. Three converters, one per meaning, so a
+// SOURCE instant can never be written where the runtime will read OUTPUT time:
+// that is precisely the bug the brands exist to refuse (issue #7). All three
+// erase to the same division.
+
 /** Seconds, trimmed to a stable decimal form. No locale, no rounding surprises. */
-function sec(ms: number): string {
+function secString(ms: number): string {
   return String(Number((ms / 1000).toFixed(6)));
+}
+
+/** An output instant or a length, as the seconds string an attribute carries. */
+function sec(ms: OutputTimeMs | DurationMs): string {
+  return secString(ms);
+}
+
+/** A position inside the source media (`data-media-start`), as a seconds string. */
+function mediaSec(ms: SourceTimeMs): string {
+  return secString(ms);
 }
 
 /** CSS pixels, same stable decimal form. */
@@ -57,6 +76,11 @@ function round(value: number, decimals = 6): number {
   return Number(value.toFixed(decimals));
 }
 
+/** An output instant or a length, as the seconds number a data island carries. */
+function toSec(ms: OutputTimeMs | DurationMs): number {
+  return round(ms / 1000);
+}
+
 /**
  * Projects the zoom track from sourceMs onto outputMs through the EditList.
  * Spec section 3: zooms are anchored in what happened, not in where it ended up.
@@ -79,15 +103,15 @@ export function cameraTrack(project: DemoProject): CameraKeyframe[] {
  * the end of its own segment is clipped there: the material it was describing
  * stops at the cut, so the overlay must stop with it.
  */
-function projectSpan(list: EditList, fromMs: number, toMs: number): { start: number; end: number } | null {
+function projectSpan(list: EditList, fromMs: SourceTimeMs, toMs: SourceTimeMs): { start: number; end: number } | null {
   const startMs = sourceToOutput(list, fromMs);
   if (startMs === null) return null;
   const segment = list.find((s) => fromMs >= s.sourceFromMs && fromMs < s.sourceToMs);
   if (!segment) return null;
-  const clampedToMs = Math.min(toMs, segment.sourceToMs);
-  const endMs = startMs + (clampedToMs - fromMs) / segment.speed;
+  const clampedToMs = minOf(toMs, segment.sourceToMs);
+  const endMs = addMs(startMs, atSpeed(spanMs(clampedToMs, fromMs), segment.speed));
   if (endMs <= startMs) return null;
-  return { start: round(startMs / 1000), end: round(endMs / 1000) };
+  return { start: toSec(startMs), end: toSec(endMs) };
 }
 
 
@@ -250,11 +274,11 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
   // duration is derived from the NEXT clip's start (and the last one from the
   // composition's end) so the track tiles the composition with no gap and no
   // uncovered tail. A gap or a short tail renders silently black.
-  const starts: number[] = [];
-  let cursor = 0;
+  const starts: OutputTimeMs[] = [];
+  let cursor = OUTPUT_ZERO;
   for (const segment of project.editList) {
     starts.push(cursor);
-    cursor += (segment.sourceToMs - segment.sourceFromMs) / segment.speed;
+    cursor = addMs(cursor, atSpeed(spanMs(segment.sourceToMs, segment.sourceFromMs), segment.speed));
   }
 
   // A cut is a hard jump; the junction the EditList already declares is exactly
@@ -272,18 +296,21 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
   // The lead is clamped by both sides: it cannot read before the start of the
   // media, and it cannot start before the clip it is dissolving from.
   const cutMs = project.style.cutTransitionMs;
-  const leads = project.editList.map((segment, i) => {
-    if (i === 0 || cutMs <= 0) return 0;
-    const previousOutputMs = starts[i] - starts[i - 1];
-    return Math.max(0, Math.min(cutMs, segment.sourceFromMs / segment.speed, previousOutputMs));
+  const leads: DurationMs[] = project.editList.map((segment, i) => {
+    if (i === 0 || cutMs <= 0) return ZERO_MS;
+    const previousOutputMs = spanMs(starts[i], starts[i - 1]);
+    // The handle: all the material recorded before this segment starts, at
+    // this segment's speed.
+    const handleMs = atSpeed(spanMs(segment.sourceFromMs, SOURCE_ZERO), segment.speed);
+    return maxOf(ZERO_MS, minOf(cutMs, handleMs, previousOutputMs));
   });
 
   const videos = project.editList.map((segment, i) => {
     const lead = leads[i];
-    const startMs = starts[i] - lead;
-    const endMs = i + 1 < starts.length ? starts[i + 1] : totalMs;
-    return `<video id="clip-${i}" class="seg" data-start="${sec(startMs)}" data-duration="${sec(endMs - startMs)}"`
-      + ` data-media-start="${sec(segment.sourceFromMs - lead * segment.speed)}" data-playback-rate="${segment.speed}"`
+    const startMs = subMs(starts[i], lead);
+    const endMs = i + 1 < starts.length ? starts[i + 1] : outputEnd(totalMs);
+    return `<video id="clip-${i}" class="seg" data-start="${sec(startMs)}" data-duration="${sec(spanMs(endMs, startMs))}"`
+      + ` data-media-start="${mediaSec(subMs(segment.sourceFromMs, scaleMs(lead, segment.speed)))}" data-playback-rate="${segment.speed}"`
       // Neighbours alternate tracks so their overlap is legal; DOM order (not the
       // track index) decides what is painted on top, and the incoming clip is
       // later in the document, so it dissolves IN over the outgoing one.
@@ -291,10 +318,10 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
   }).join("\n      ");
 
   const transitionJson = JSON.stringify({
-    crossfades: leads.flatMap((lead, i) => lead > 0 ? [{ id: `clip-${i}`, start: round((starts[i] - lead) / 1000), duration: round(lead / 1000) }] : []),
-    opening: round(project.style.openingFadeMs / 1000),
-    ending: round(project.style.endingFadeMs / 1000),
-    total: round(totalMs / 1000)
+    crossfades: leads.flatMap((lead, i) => lead > 0 ? [{ id: `clip-${i}`, start: toSec(subMs(starts[i], lead)), duration: toSec(lead) }] : []),
+    opening: toSec(project.style.openingFadeMs),
+    ending: toSec(project.style.endingFadeMs),
+    total: toSec(totalMs)
   });
 
   const stageStyle = [

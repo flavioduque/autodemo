@@ -328,17 +328,57 @@ export async function click(id: string, selector: string, label?: string) {
   });
 }
 
-export async function fill(id: string, selector: string, value: string, label?: string) {
+/**
+ * Fills a field, optionally TYPING it one character at a time.
+ *
+ * Why this exists. `locator.fill()` sets the value in a single operation: on
+ * screen the field goes from empty to complete inside one frame, and the demo
+ * reads as rushed no matter how long the pauses around it are — the keystrokes
+ * never happened. `typeDelayMs` sends real key events instead, `delay` ms apart,
+ * which is what a viewer recognizes as a person filling a form.
+ *
+ * `pressSequentially` is Playwright's current API for that (`locator.type()` is
+ * deprecated); it is declared on `Locator` in playwright-core 1.63.0's
+ * types.d.ts, the version this package pins.
+ *
+ * Absent or 0, nothing changes: the old instant `.fill()` runs, so no existing
+ * caller and no existing capture is affected.
+ *
+ * The field is cleared BEFORE typing — `pressSequentially` appends to whatever
+ * is already there, so without this a second fill of the same field would end
+ * up holding both values.
+ */
+export async function fill(
+  id: string,
+  selector: string,
+  value: string,
+  label?: string,
+  typeDelayMs?: number
+) {
   const s = getSession(id);
   const atMs = nowSourceMs(s);
+  // Wall clock alongside the capture's own clock: see the `durationMs` note
+  // below. Both tick at real-time rate, so they measure the same quantity.
+  const startedWallMs = Date.now();
   const locator = await resolveAcrossFrames(s, selector);
   const box = await locator.boundingBox();
-  await locator.fill(value);
+  if (typeDelayMs && typeDelayMs > 0) {
+    await locator.fill("");
+    await locator.pressSequentially(value, { delay: typeDelayMs });
+  } else {
+    await locator.fill(value);
+  }
   s.actions.push({
     id: crypto.randomUUID(),
     type: "fill",
     atMs,
-    durationMs: nowSourceMs(s) - atMs,
+    // The capture's clock only advances when a screencast frame arrives, so on
+    // the last keystroke it can still sit up to one frame interval behind. The
+    // wall-clock elapsed is a floor under that: typing time is what the
+    // compositor's zoom and caption windows are derived from, and a typed fill
+    // reported as instant would desynchronize both. Never a ceiling — `atMs`
+    // stays on the frame line, which is the invariant that matters.
+    durationMs: Math.max(nowSourceMs(s) - atMs, Date.now() - startedWallMs),
     selector,
     value: "[redacted]",
     label,

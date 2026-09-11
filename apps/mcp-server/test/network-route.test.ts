@@ -102,14 +102,14 @@ function pagesPointingAt(b: LocalServer) {
  */
 const HOOK = { timeout: 20_000 };
 
-async function open(t: any, network: Parameters<typeof startSession>[0]["network"]): Promise<Session> {
+async function open(t: any, network: Parameters<typeof startSession>[0]["network"], browserArgs?: string[]): Promise<Session> {
   // The hook is registered BEFORE the launch is awaited: a test that times out
   // while the browser is still starting would otherwise get its browser AFTER
   // the timeout, with no hook to close it — and a browser nobody closes keeps
   // the runner's event loop alive after the last test (seen by execution: a
   // diagnostic report of the stuck runner showed a live Chrome `process`
   // handle and its four pipes, and nothing else).
-  const pending = startSession({ width: 800, height: 500, headless: true, network });
+  const pending = startSession({ width: 800, height: 500, headless: true, network, browserArgs });
   t.after(async () => {
     const session = await pending.catch(() => undefined);
     if (!session) return;
@@ -471,7 +471,25 @@ test("DNS pin: a listed name is resolved by OUR resolver and Chromium is pinned 
 // no DNS. Every scenario ASSERTS the frame landed in a separate target via
 // `Target.getTargets` — otherwise it would be exercising the same-process path
 // that already worked.
+//
+// That assertion needs a browser that ISOLATES. Full Chrome does by default;
+// Playwright's bundled `chromium_headless_shell` — what CI drives — does not,
+// and without a flag `Target.getTargets` there answers with the page target
+// ALONE (verified by execution on chrome-headless-shell 150.0.7871.24: one
+// `type: "page"` entry, no `iframe` entry, on both the page session and a
+// browser-level session, while `page.frames()` still listed the cross-site
+// frame — i.e. genuinely in-process, not a query that fails to see it). So the
+// scenarios launch with `--site-per-process`, which turns site isolation on for
+// the shell and is already the behaviour under Chrome. The precondition stays
+// exactly as strict; only the binary is made capable of satisfying it.
 // ---------------------------------------------------------------------------
+
+/**
+ * Forces site isolation for the OOPIF scenarios, so a cross-site <iframe>
+ * really becomes its own target on every supported binary. Test-only: the
+ * product launches with the policy's flags alone.
+ */
+const SITE_ISOLATION = ["--site-per-process"];
 
 /** Server B, reached as two distinct sites. */
 const asLocalhost = (b: LocalServer) => `http://localhost:${b.port}`;
@@ -527,7 +545,7 @@ async function assertOutOfProcess(session: Session, frameOrigin: string) {
 
 test("OOPIF redirect: a fetch inside a cross-process iframe answered 302 to the forbidden port — zero hits, block recorded as a redirect", { timeout: 60_000 }, async (t) => {
   const { a, b, c } = await targetsScenario(t);
-  const session = await open(t, { allowedHosts: allowAandB(a, b) });
+  const session = await open(t, { allowedHosts: allowAandB(a, b) }, SITE_ISOLATION);
   await goto(session.id, `${a.origin}/embed-hop`);
   await settle(800);
 
@@ -543,7 +561,7 @@ test("OOPIF redirect: a fetch inside a cross-process iframe answered 302 to the 
 
 test("nested OOPIF: an iframe on a third site inside the cross-process iframe is guarded too", { timeout: 60_000 }, async (t) => {
   const { a, b, c } = await targetsScenario(t);
-  const session = await open(t, { allowedHosts: allowAandB(a, b) });
+  const session = await open(t, { allowedHosts: allowAandB(a, b) }, SITE_ISOLATION);
   await goto(session.id, `${a.origin}/embed-nested`);
   await settle(1000);
 
@@ -561,7 +579,7 @@ test("nested OOPIF: an iframe on a third site inside the cross-process iframe is
 
 test("legitimate cross-process iframe: it loads, inspect sees into it, a click inside it lands and records", { timeout: 60_000 }, async (t) => {
   const { a, b } = await targetsScenario(t);
-  const session = await open(t, { allowedHosts: allowAandB(a, b) });
+  const session = await open(t, { allowedHosts: allowAandB(a, b) }, SITE_ISOLATION);
   await goto(session.id, `${a.origin}/embed`);
   await assertOutOfProcess(session, asLocalhost(b));
   assert.equal(b.hits.filter((h) => h.url === "/frame").length, 1, "the iframe document was not served");
@@ -626,7 +644,7 @@ test("popup via redirect: window.open to the allowed host answering 302 to the f
 
 test("iframe churn: after creating and destroying cross-process iframes, no target lingers and the guard still holds", { timeout: 90_000 }, async (t) => {
   const { a, b, c } = await targetsScenario(t);
-  const session = await open(t, { allowedHosts: allowAandB(a, b) });
+  const session = await open(t, { allowedHosts: allowAandB(a, b) }, SITE_ISOLATION);
   await goto(session.id, `${a.origin}/plain`);
   assert.deepEqual(await oopifTargets(session), [], "the plain page already has an out-of-process frame");
 

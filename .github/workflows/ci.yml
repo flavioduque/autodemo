@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -19,7 +20,49 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile=false
+      # A suíte padrão dirige um browser de verdade (frames.test.ts,
+      # typing.test.ts) e NÃO usa ffmpeg: tudo que precisaria dele está atrás de
+      # uma variável de ambiente, e o único teste padrão que chama session_stop
+      # roda no modo record-video justamente por isso.
       - run: pnpm --filter @demomotion/mcp-server exec playwright install --with-deps chromium
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  # O comando que o CONTRIBUTING documenta para os testes de render. Mantido em
+  # job separado porque é caro: dez renders de 1080p30. Não roda em pull request
+  # para não pendurar cada PR nele; roda no push para main e sob demanda.
+  render:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DEMOMOTION_RENDER_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      # A imagem ubuntu-latest NÃO traz ffmpeg. O clipe-fonte dos testes é
+      # desenhado com ele, e as próprias medições (blackdetect, extração de
+      # frames) também.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @demomotion/mcp-server exec playwright install --with-deps chromium
+      # O HyperFrames renderiza com puppeteer-core e baixaria o próprio Chrome.
+      # A imagem já tem um; apontar para ele evita 150 MB de download por run.
+      # Se não houver, falha aqui dizendo isso — em vez de travar no download.
+      - name: Point HyperFrames at the runner's Chrome
+        run: |
+          chrome="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          if [ -z "$chrome" ]; then
+            echo "No Google Chrome on this runner; HyperFrames would download its own." >&2
+            exit 1
+          fi
+          echo "HYPERFRAMES_BROWSER_PATH=$chrome" >> "$GITHUB_ENV"
+      - run: pnpm --filter @demomotion/mcp-server test

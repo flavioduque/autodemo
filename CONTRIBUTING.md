@@ -15,11 +15,15 @@ On hosts without a bundled Chromium build for your platform, set
 
 ## Slow tests
 
-`pnpm test` skips everything that launches a browser or ffmpeg. Each slow layer
-has its own gate:
+`pnpm test` runs every fast test plus the browser-driven ones that pin visible
+defects (`frames.test.ts`, `typing.test.ts`). Those are deliberately not gated:
+a suite that stayed green while the product's eyes were shut is how one of them
+shipped. They need a browser; they do not need ffmpeg.
+
+Everything heavier is behind its own gate:
 
 ```bash
-# render-level tests (compositor pixels)
+# render-level tests (compositor pixels). Needs a browser AND ffmpeg.
 DEMOMOTION_RENDER_TESTS=1 pnpm --filter @demomotion/mcp-server test
 
 # capture time-base alignment
@@ -32,5 +36,25 @@ DEMOMOTION_E2E_TESTS=1 pnpm --filter @demomotion/mcp-server test
 
 Add `DEMOMOTION_BROWSER_CHANNEL=chrome` on a host without bundled Chromium, and
 `DEMOMOTION_E2E_DEBUG=1` to see the spawned server's stderr.
+
+### The render tests' source clip
+
+The render tests composite a 9.08 s clip that reproduces the fixture target
+app's visual contract — the same four corner markers, in the same colours and
+sizes, plus its on-screen elapsed-time clock. It is **drawn on first use** by
+`apps/mcp-server/test/fixture-media.ts` and cached, with a digest, under the
+gitignored `data/test-media/`. Nothing is committed and nothing depends on an
+artefact that exists on one machine.
+
+* A cache that is stale, truncated, or of the wrong codec, size, frame rate or
+  duration is detected and rebuilt, never reused.
+* If ffmpeg (or ffprobe) is missing, the run **fails** naming what to install.
+  It does not skip: a suite that quietly opts out on a fresh clone looks green
+  while proving nothing.
+* Delete `data/test-media/` to force a rebuild.
+
+`fixture-media.test.ts` runs in the default suite and needs neither ffmpeg nor a
+browser: it fails if the drawn scene drifts away from `fixtures/target-app`, or
+loses a property the render tests measure.
 
 Keep capture backends isolated behind stable MCP tools. Raw capture metadata must remain independent from creative compositor decisions.

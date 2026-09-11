@@ -8,6 +8,7 @@ import path from "node:path";
 import { DemoProjectSchema } from "@demomotion/schema";
 import { generateComposition } from "@demomotion/compositor";
 import { renderCompositionHtml, telemetryEnv, videoSrcName } from "../src/render.ts";
+import { fixtureSourceVideo, DURATION_SEC } from "./fixture-media.ts";
 
 const run = promisify(execFile);
 
@@ -15,24 +16,29 @@ const run = promisify(execFile);
  * These tests launch Chrome and ffmpeg; each render takes ~30 s. Run them with:
  *
  *   DEMOMOTION_RENDER_TESTS=1 pnpm --filter @demomotion/mcp-server test
+ *
+ * The source clip they composite is BUILT on first use and cached under the
+ * gitignored data/test-media/ — see fixture-media.ts. Nothing here depends on an
+ * artefact that only exists on one machine, and nothing skips quietly if the
+ * clip cannot be built: the run fails saying what is missing.
  */
 const SLOW = process.env.DEMOMOTION_RENDER_TESTS === "1";
 const skip = SLOW ? false : "set DEMOMOTION_RENDER_TESTS=1 to run render-level tests";
 const TIMEOUT = 900_000;
 
-const REPO = path.resolve(import.meta.dirname, "../../..");
-const SOURCE = path.join(REPO, "data/sessions/3fdaf0eb-ba56-409e-a092-5aa66cfdd05b/page@985b00a54e058ef4cd1c85af81850c9e.webm");
+/** The media really is shorter than the 10.315 s the projects below declare. */
+const MEDIA_SEC = DURATION_SEC; // 9.08
 
 /**
- * Synthetic project: the real capture as raw material, but times we chose. The
- * capture layer has a known ~2.1 s manifest/video offset that is not the
- * compositor's business, so no test here depends on manifest timestamps.
+ * Synthetic project: the fixture clip as raw material, but times we chose. Its
+ * media is 9.08 s long while the project claims 10.315 s — the same gap the real
+ * capture had, and the one the black-tail trap lives in.
  */
-function syntheticProject(over: Record<string, unknown> = {}) {
+function syntheticProject(source: string, over: Record<string, unknown> = {}) {
   return DemoProjectSchema.parse({
     version: 1,
     title: "render test",
-    sourceVideo: SOURCE,
+    sourceVideo: source,
     width: 1920,
     height: 1080,
     fps: 30,
@@ -40,8 +46,8 @@ function syntheticProject(over: Record<string, unknown> = {}) {
     style: { background: "#0b1020", padding: 56, radius: 24, shadow: true },
     actions: [],
     zooms: [],
-    // The capture manifest claims 10.315 s while the media container reports
-    // 9.08 s. That gap is exactly the black-tail trap.
+    // The project claims 10.315 s while the media container reports 9.08 s.
+    // That gap is exactly the black-tail trap.
     editList: [{ sourceFromMs: 0, sourceToMs: 10315, speed: 1 }],
     callouts: [],
     ...over
@@ -147,6 +153,14 @@ async function lastFrame(mp4: string): Promise<Buffer> {
   return stdout as unknown as Buffer;
 }
 
+/** The container's own duration, read from the file rather than from a constant. */
+async function mediaDurationSec(file: string): Promise<number> {
+  const { stdout } = await run("ffprobe", [
+    "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file
+  ]);
+  return Number(String(stdout).trim());
+}
+
 /** Mean channel value of a frame: how bright the whole picture is. */
 function meanLevel(frame: Buffer): number {
   let total = 0;
@@ -170,13 +184,24 @@ test("HYPERFRAMES_NO_TELEMETRY is set by default and an explicit operator choice
 });
 
 test("the generated composition holds its tail instead of going black", { skip, timeout: TIMEOUT }, async () => {
+  const SOURCE = await fixtureSourceVideo();
   const dir = await tmpdir();
   try {
+    // SEED: the trap is armed. Read from the container itself, not from the
+    // constant the generator used — a source clip as long as the composition
+    // would leave no uncovered tail, and every assertion below would pass for
+    // the wrong reason.
+    const sourceSec = await mediaDurationSec(SOURCE);
+    assert.ok(Math.abs(sourceSec - MEDIA_SEC) < 0.02,
+      `the source clip lasts ${sourceSec}s, expected ${MEDIA_SEC}s`);
+    assert.ok(sourceSec < 10.315 - 0.5,
+      `the source clip (${sourceSec}s) covers the whole 10.315 s composition — there is no tail to hold`);
+
     // The closing fade is switched OFF here on purpose: it darkens the last
     // frames deliberately, and blackdetect cannot tell a deliberate fade from
     // the uncovered-tail defect this test exists to catch. That the fade itself
     // works is a separate test below.
-    const project = syntheticProject({
+    const project = syntheticProject(SOURCE, {
       style: { background: "#0b1020", padding: 56, radius: 24, shadow: true, openingFadeMs: 0, endingFadeMs: 0 }
     });
     const videoSrc = videoSrcName(SOURCE);
@@ -204,9 +229,10 @@ test("the generated composition holds its tail instead of going black", { skip, 
 });
 
 test("corner markers come out square — the objectFit:cover crop is gone", { skip, timeout: TIMEOUT }, async () => {
+  const SOURCE = await fixtureSourceVideo();
   const dir = await tmpdir();
   try {
-    const project = syntheticProject();
+    const project = syntheticProject(SOURCE);
     const videoSrc = videoSrcName(SOURCE);
     const html = generateComposition(project, { videoSrc });
 
@@ -239,11 +265,12 @@ test("corner markers come out square — the objectFit:cover crop is gone", { sk
 
 test("captions are on screen inside their window, absent outside it, and the highlight moves word by word",
   { skip, timeout: TIMEOUT }, async () => {
+  const SOURCE = await fixtureSourceVideo();
   const dir = await tmpdir();
   try {
     // Hand-split by distributeWords over [2000, 6000): 2.000 | 2.818 | 3.454 |
     // 5.000 | 6.000 (the worked example in packages/core/test/captions.test.ts).
-    const project = syntheticProject({
+    const project = syntheticProject(SOURCE, {
       captions: [{
         fromMs: 2000, toMs: 6000, text: "Open the settings panel",
         words: [
@@ -281,6 +308,7 @@ test("captions are on screen inside their window, absent outside it, and the hig
 
 test("a crossfade at a cut really blends both sides — measured in rendered pixels",
   { skip, timeout: TIMEOUT }, async () => {
+  const SOURCE = await fixtureSourceVideo();
   const dir = await tmpdir();
   try {
     // The cut lands at output 3.0 s, between two visually different states of the
@@ -294,8 +322,8 @@ test("a crossfade at a cut really blends both sides — measured in rendered pix
 
     const faded = path.join(dir, "faded.mp4");
     const hard = path.join(dir, "hard.mp4");
-    await renderCompositionHtml(generateComposition(syntheticProject({ editList, style: { ...style, cutTransitionMs: 180 } }), { videoSrc }), SOURCE, faded, videoSrc);
-    await renderCompositionHtml(generateComposition(syntheticProject({ editList, style: { ...style, cutTransitionMs: 0 } }), { videoSrc }), SOURCE, hard, videoSrc);
+    await renderCompositionHtml(generateComposition(syntheticProject(SOURCE, { editList, style: { ...style, cutTransitionMs: 180 } }), { videoSrc }), SOURCE, faded, videoSrc);
+    await renderCompositionHtml(generateComposition(syntheticProject(SOURCE, { editList, style: { ...style, cutTransitionMs: 0 } }), { videoSrc }), SOURCE, hard, videoSrc);
 
     // The two pure sides, taken from the HARD CUT render: at 2.91 s it is still
     // the outgoing clip, at 3.02 s it is already the incoming one.
@@ -331,10 +359,11 @@ test("a crossfade at a cut really blends both sides — measured in rendered pix
 });
 
 test("the crossfade does not reintroduce the black tail", { skip, timeout: TIMEOUT }, async () => {
+  const SOURCE = await fixtureSourceVideo();
   const dir = await tmpdir();
   try {
     const videoSrc = videoSrcName(SOURCE);
-    const project = syntheticProject({
+    const project = syntheticProject(SOURCE, {
       style: { background: "#0b1020", padding: 56, radius: 24, shadow: true, openingFadeMs: 0, endingFadeMs: 0 },
       editList: [
         { sourceFromMs: 0, sourceToMs: 3000, speed: 1 },
@@ -356,13 +385,14 @@ test("the crossfade does not reintroduce the black tail", { skip, timeout: TIMEO
 });
 
 test("the composition opens and closes on the background colour", { skip, timeout: TIMEOUT }, async () => {
+  const SOURCE = await fixtureSourceVideo();
   const dir = await tmpdir();
   try {
     const videoSrc = videoSrcName(SOURCE);
     const faded = path.join(dir, "fades.mp4");
     const plain = path.join(dir, "nofade.mp4");
-    await renderCompositionHtml(generateComposition(syntheticProject(), { videoSrc }), SOURCE, faded, videoSrc);
-    await renderCompositionHtml(generateComposition(syntheticProject({
+    await renderCompositionHtml(generateComposition(syntheticProject(SOURCE), { videoSrc }), SOURCE, faded, videoSrc);
+    await renderCompositionHtml(generateComposition(syntheticProject(SOURCE, {
       style: { background: "#0b1020", padding: 56, radius: 24, shadow: true, openingFadeMs: 0, endingFadeMs: 0 }
     }), { videoSrc }), SOURCE, plain, videoSrc);
 

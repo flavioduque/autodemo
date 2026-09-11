@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Create your Saltmarsh workspace</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<header class="nav">
+  <div class="shell nav-inner">
+    <a class="wordmark" href="/" data-testid="signup-back">
+      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+        <rect x="0.5" y="0.5" width="19" height="19" rx="5.5" fill="none" stroke="#f2a23f" stroke-width="1.4"/>
+        <path d="M6 13.2c1.4 0 1.4-2.6 2.8-2.6s1.4 2.6 2.8 2.6 1.4-2.6 2.8-2.6" fill="none" stroke="#f2a23f" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M6 8.4h5.2" fill="none" stroke="#f2a23f" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      Saltmarsh
+    </a>
+    <div class="nav-right">
+      <a class="nav-signin" href="/" data-testid="signup-nav-home">Back to site</a>
+    </div>
+  </div>
+</header>
+
+<main class="signup">
+  <div class="shell signup-grid">
+
+    <div class="card enter" data-testid="signup-card">
+      <!-- Form view -->
+      <div id="form-view">
+        <h1>Create your workspace</h1>
+        <p>Free for your first three clients. No card.</p>
+
+        <form class="form" id="signup-form" novalidate data-testid="signup-form">
+          <div class="field" id="field-name">
+            <label for="name">Full name</label>
+            <input class="input" id="name" name="name" type="text" autocomplete="name"
+                   placeholder="Inês Corvelo" data-testid="signup-name-input" />
+            <p class="error" id="name-error" data-testid="signup-name-error"></p>
+          </div>
+
+          <div class="field" id="field-email">
+            <label for="email">Work email</label>
+            <input class="input" id="email" name="email" type="email" autocomplete="email"
+                   placeholder="you@studio.com" data-testid="signup-email-input" />
+            <p class="error" id="email-error" data-testid="signup-email-error"></p>
+          </div>
+
+          <div class="field" id="field-password">
+            <label for="password">Password</label>
+            <div class="input-wrap">
+              <input class="input" id="password" name="password" type="password"
+                     autocomplete="new-password" placeholder="At least 10 characters"
+                     data-testid="signup-password-input" />
+              <button type="button" class="reveal" id="reveal" data-testid="signup-password-toggle">Show</button>
+            </div>
+            <div class="meter" id="meter" data-score="0" data-testid="password-strength" aria-hidden="true">
+              <i></i><i></i><i></i><i></i>
+            </div>
+            <p class="hint">
+              <span id="strength-label" data-testid="password-strength-label">Use 10 characters or more</span>
+              <b id="strength-tip" data-testid="password-strength-tip"></b>
+            </p>
+            <p class="error" id="password-error" data-testid="signup-password-error"></p>
+          </div>
+
+          <div class="field" id="field-terms">
+            <label class="check">
+              <input type="checkbox" id="terms" data-testid="signup-terms-checkbox" />
+              <span>I agree to the <a href="#" data-testid="signup-terms-link">terms of service</a> and the way Saltmarsh handles client data.</span>
+            </label>
+            <p class="error" id="terms-error" data-testid="signup-terms-error"></p>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block" id="submit" data-testid="signup-submit">
+            Create workspace
+          </button>
+        </form>
+      </div>
+
+      <!-- Success view -->
+      <div class="success" id="success-view" hidden data-testid="success-panel">
+        <div class="seal" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <path d="M5.5 11.4l3.6 3.6 7.4-8" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h1 data-testid="success-headline">Workspace ready, <span id="success-name">friend</span>.</h1>
+        <p>Your invoice template is set up and three sample projects are already in the ledger.</p>
+        <div class="workspace" data-testid="success-workspace-name"><span>saltmarsh.app/</span><span id="success-slug">new-studio</span></div>
+
+        <div class="panel" data-testid="success-panel-ledger">
+          <div class="panel-head">
+            <div>
+              <div class="panel-label">Drafts waiting for you</div>
+              <div class="panel-figure">$18,900</div>
+            </div>
+            <div class="spark" aria-hidden="true">
+              <i style="height:22%"></i><i style="height:40%"></i><i style="height:30%"></i>
+              <i style="height:56%"></i><i class="on" style="height:78%"></i>
+              <i class="on" style="height:64%"></i><i class="on" style="height:90%"></i>
+            </div>
+          </div>
+          <div class="rows">
+            <div class="row">
+              <div>
+                <div class="row-name">Harrow Ceramics</div>
+                <div class="row-meta">Brand system, milestone 1</div>
+              </div>
+              <div class="row-right">
+                <div class="row-amount">$8,200</div>
+                <span class="pill pill-due">Draft</span>
+              </div>
+            </div>
+            <div class="row">
+              <div>
+                <div class="row-name">Pell &amp; Rowe</div>
+                <div class="row-meta">Retainer, July</div>
+              </div>
+              <div class="row-right">
+                <div class="row-amount">$6,500</div>
+                <span class="pill pill-due">Draft</span>
+              </div>
+            </div>
+            <div class="row">
+              <div>
+                <div class="row-name">Wren &amp; Tallow</div>
+                <div class="row-meta">Site build, deposit</div>
+              </div>
+              <div class="row-right">
+                <div class="row-amount">$4,200</div>
+                <span class="pill">Scheduled</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <a class="btn btn-primary btn-block" href="#" data-testid="success-cta">Open workspace</a>
+      </div>
+    </div>
+
+    <aside class="aside enter d2">
+      <h2>Set it up once, then stop thinking about billing.</h2>
+      <div class="aside-list">
+        <div class="aside-item">
+          <b>Import your projects</b>
+          <p>Connect the tool you already plan in, or paste a milestone list.</p>
+        </div>
+        <div class="aside-item">
+          <b>Set your terms</b>
+          <p>Net 14, net 30, deposits, late fees. Per client if you need it.</p>
+        </div>
+        <div class="aside-item">
+          <b>Let it run</b>
+          <p>Invoices go out on approval. You get told when money lands.</p>
+        </div>
+      </div>
+      <figure class="aside-quote">
+        <blockquote>We stopped writing invoices on Fridays. They file themselves the hour a milestone is approved.</blockquote>
+        <figcaption><b>Inês Corvelo</b> Operations lead, Brackish Studio</figcaption>
+      </figure>
+    </aside>
+
+  </div>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

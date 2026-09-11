@@ -23,7 +23,7 @@ import { startSession, goto, click, status, stopSession, inspectPage, type Sessi
 // a browser, no ffmpeg. On macOS the locally installed Chrome is driven.
 // ---------------------------------------------------------------------------
 
-if (process.platform === "darwin" && !process.env.DEMOMOTION_BROWSER_CHANNEL) {
+if (process.platform === "darwin" && !process.env.DEMOMOTION_BROWSER_CHANNEL && !process.env.DEMOMOTION_BROWSER_EXECUTABLE) {
   process.env.DEMOMOTION_BROWSER_CHANNEL = "chrome";
 }
 
@@ -60,7 +60,12 @@ function serve(routes: Record<string, (res: http.ServerResponse) => void> = {}):
         port,
         origin: `http://127.0.0.1:${port}`,
         hits,
-        close: () => new Promise((r) => server.close(() => r()))
+        // Destroys live connections first: `server.close` alone waits for every
+        // connection to finish, and the browser (torn down AFTER the servers in
+        // each test) may hold one open on a request that will never complete —
+        // a cleanup hook that waits on it never returns, and node:test gives a
+        // hook no timeout of its own: the file hangs, silently.
+        close: () => new Promise((r) => { server.closeAllConnections(); server.close(() => r()); })
       });
     });
   });
@@ -80,18 +85,39 @@ function pagesPointingAt(b: LocalServer) {
     // Same-origin fetch and XHR whose ANSWER is the 302 to server B.
     "/fetch-hop": html(`<h1>A</h1><script>fetch("/redirect").catch(function(){});var x=new XMLHttpRequest();x.open("GET","/redirect");x.send()</script>`),
     "/ws": html(`<h1>A</h1><script>try{new WebSocket("${b.origin.replace("http", "ws")}/from-ws")}catch(e){}</script>`),
+    // Never answered: a page that includes it never reaches networkidle.
+    "/hang": () => {},
+    // Loads, then sends itself to server B — while `/hang` keeps the load from
+    // ever going idle. What a `goto` has to settle on is the guard, not Playwright.
+    "/leave-for-b": html(`<h1 id="stay">A</h1><img src="/hang"><script>location.href="${b.origin}/from-leave"</script>`),
     "/plain": html(`<h1>A</h1>`)
   };
 }
 
+/**
+ * Cleanup hooks get an explicit timeout. node:test does not give a hook the
+ * test's timeout — a hook that never settles is a file that never finishes
+ * and never says why (CI run 34610252858: fourteen silent minutes, cancelled).
+ * With one, a stuck teardown is a red hook with a name.
+ */
+const HOOK = { timeout: 20_000 };
+
 async function open(t: any, network: Parameters<typeof startSession>[0]["network"]): Promise<Session> {
-  const session = await startSession({ width: 800, height: 500, headless: true, network });
+  // The hook is registered BEFORE the launch is awaited: a test that times out
+  // while the browser is still starting would otherwise get its browser AFTER
+  // the timeout, with no hook to close it — and a browser nobody closes keeps
+  // the runner's event loop alive after the last test (seen by execution: a
+  // diagnostic report of the stuck runner showed a live Chrome `process`
+  // handle and its four pipes, and nothing else).
+  const pending = startSession({ width: 800, height: 500, headless: true, network });
   t.after(async () => {
+    const session = await pending.catch(() => undefined);
+    if (!session) return;
     await session.context.close().catch(() => {});
     await session.browser.close().catch(() => {});
     await fs.rm(session.dir, { recursive: true, force: true }).catch(() => {});
-  });
-  return session;
+  }, HOOK);
+  return pending;
 }
 
 /** Blocks are recorded asynchronously (the browser aborts the request); wait for one. */
@@ -112,7 +138,7 @@ const settle = (ms = 500) => new Promise((r) => setTimeout(r, ms));
 test("positive: the allowlisted server navigates and records, with zero blocked requests", { timeout: 60_000 }, async (t) => {
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
   await goto(session.id, `${a.origin}/plain`);
@@ -131,9 +157,9 @@ test("session_stop reports zero blocked requests for a clean session", { timeout
   t.after(() => { if (previous === undefined) delete process.env.DEMOMOTION_CAPTURE; else process.env.DEMOMOTION_CAPTURE = previous; });
 
   const a = await serve();
-  t.after(() => a.close());
+  t.after(() => a.close(), HOOK);
   const session = await startSession({ width: 640, height: 400, headless: true, network: { allowedHosts: `127.0.0.1:${a.port}` } });
-  t.after(() => fs.rm(session.dir, { recursive: true, force: true }).catch(() => {}));
+  t.after(() => fs.rm(session.dir, { recursive: true, force: true }).catch(() => {}), HOOK);
   await goto(session.id, `${a.origin}/`);
   const capture = await stopSession(session.id);
   assert.deepEqual(capture.blockedRequests, []);
@@ -144,7 +170,7 @@ test("session_stop reports zero blocked requests for a clean session", { timeout
 test("seed: the second server IS reachable when it is allowlisted (the negative below is not vacuous)", { timeout: 60_000 }, async (t) => {
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const session = await open(t, { allowedHosts: `127.0.0.1:${a.port},127.0.0.1:${b.port}` });
   await goto(session.id, `${b.origin}/seed`);
@@ -155,7 +181,7 @@ test("seed: the second server IS reachable when it is allowlisted (the negative 
 test("negative: the same server, not allowlisted — goto fails with OUR message and the server logs nothing", { timeout: 60_000 }, async (t) => {
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
   await goto(session.id, `${a.origin}/plain`);
@@ -183,7 +209,7 @@ test("negative: the same server, not allowlisted — goto fails with OUR message
 test("the env var is what configures the policy when nothing is injected", { timeout: 60_000 }, async (t) => {
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const previous = process.env.DEMOMOTION_ALLOWED_HOSTS;
   process.env.DEMOMOTION_ALLOWED_HOSTS = `127.0.0.1:${a.port}`;
@@ -197,7 +223,7 @@ test("the env var is what configures the policy when nothing is injected", { tim
 
 test("default: variable unset — 127.0.0.1 works and a metadata address is refused before any socket", { timeout: 60_000 }, async (t) => {
   const a = await serve();
-  t.after(() => a.close());
+  t.after(() => a.close(), HOOK);
   const previous = process.env.DEMOMOTION_ALLOWED_HOSTS;
   delete process.env.DEMOMOTION_ALLOWED_HOSTS;
   t.after(() => { if (previous !== undefined) process.env.DEMOMOTION_ALLOWED_HOSTS = previous; });
@@ -224,7 +250,7 @@ test("default: variable unset — 127.0.0.1 works and a metadata address is refu
 test("redirect: an allowlisted page answering 302 to the forbidden server — zero hits, the block is recorded, goto fails with OUR message", { timeout: 60_000 }, async (t) => {
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
   await goto(session.id, `${a.origin}/plain`);
@@ -242,6 +268,58 @@ test("redirect: an allowlisted page answering 302 to the forbidden server — ze
   assert.equal(b.hits.length, 0, "the redirect target never received the request");
   const blocked = await waitForBlock(session.id, (r) => r.url === `${b.origin}/from-redirect`);
   assert.equal(blocked.kind, "redirect");
+  assert.equal(session.page.url(), `${a.origin}/plain`, "the page did not move");
+
+  // Positive half: with B allowed, the same 302 is followed and goto lands on B.
+  const allowed = await open(t, { allowedHosts: `127.0.0.1:${a.port},127.0.0.1:${b.port}` });
+  await goto(allowed.id, `${a.origin}/redirect`);
+  assert.equal(allowed.page.url(), `${b.origin}/from-redirect`, "the allowed redirect was not followed to its target");
+  assert.equal(b.hits.filter((h) => h.url === "/from-redirect").length, 1);
+  assert.deepEqual(status(allowed.id).blockedRequests, []);
+  assert.equal(allowed.actions.at(-1)?.type, "goto", "the allowed navigation was recorded");
+});
+
+test("goto settles on the guard's block, not on Playwright: a page that leaves for the forbidden server while its load never goes idle", { timeout: 60_000 }, async (t) => {
+  // `/leave-for-b` never reaches networkidle (its <img> is never answered), so
+  // Playwright's goto on its own would only settle on the navigation timeout —
+  // 30 s, or never, depending on how the Chromium build reports the aborted
+  // load. The guard records the block at once; goto must fail with it at once.
+  const b = await serve();
+  const a = await serve(pagesPointingAt(b));
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
+
+  const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
+  const started = Date.now();
+  await assert.rejects(
+    () => goto(session.id, `${a.origin}/leave-for-b`),
+    (error: Error) => {
+      assert.match(error.message, new RegExp(`127\\.0\\.0\\.1:${b.port}/from-leave`), "names the URL the page tried to leave for");
+      assert.match(error.message, /DEMOMOTION_ALLOWED_HOSTS/);
+      return true;
+    }
+  );
+  // Playwright on its own could only settle this at its 30 s navigation
+  // timeout (or never). The window includes serving and running the page, so
+  // the bound is generous for a loaded host, and still well under 30 s.
+  const tookMs = Date.now() - started;
+  assert.ok(tookMs < 20_000, `goto took ${tookMs}ms to fail — it waited on Playwright, not on the guard`);
+  assert.equal(b.hits.length, 0, "the forbidden server was never reached");
+  assert.equal(await session.page.locator("#stay").count(), 1, "the original document is still there");
+  const blocked = status(session.id).blockedRequests;
+  assert.equal(blocked.length, 1, JSON.stringify(blocked));
+  assert.equal(blocked[0].kind, "navigation");
+
+  // The other half: a block that is NOT this page's own navigation — a fetch
+  // from the page, and a fetch/XHR whose 302 hop is refused (labelled
+  // `redirect`, issued from the main frame) — does not fail a goto that is
+  // otherwise fine.
+  await goto(session.id, `${a.origin}/fetch`);
+  await waitForBlock(session.id, (r) => r.url === `${b.origin}/from-fetch`);
+  assert.equal(session.actions.at(-1)?.url, `${a.origin}/fetch`, "a goto with a refused sub-resource still completed and was recorded");
+  await goto(session.id, `${a.origin}/fetch-hop`);
+  await waitForBlock(session.id, (r) => r.url === `${b.origin}/from-redirect`);
+  assert.equal(session.actions.at(-1)?.url, `${a.origin}/fetch-hop`, "a goto whose page's fetch was redirected somewhere forbidden still completed and was recorded");
+  assert.equal(session.page.url(), `${a.origin}/fetch-hop`);
 });
 
 test("subresource redirect: fetch() and XHR answered 302 to the forbidden server — zero hits, both hops recorded as redirects; the same hops are followed when B is allowed", { timeout: 60_000 }, async (t) => {
@@ -250,7 +328,7 @@ test("subresource redirect: fetch() and XHR answered 302 to the forbidden server
   // layer judging only marked hops let this one through, on the main page.
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
   await goto(session.id, `${a.origin}/fetch-hop`);
@@ -272,7 +350,7 @@ test("subresource redirect: fetch() and XHR answered 302 to the forbidden server
 test("click: a link to the forbidden server — the click does not reach it, the page stays, the block is recorded", { timeout: 60_000 }, async (t) => {
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
   await goto(session.id, `${a.origin}/link`);
@@ -289,7 +367,7 @@ test("click: a link to the forbidden server — the click does not reach it, the
 test("in-page fetch(): the page loads, the forbidden fetch never arrives, the block is recorded as a sub-resource", { timeout: 60_000 }, async (t) => {
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
   await goto(session.id, `${a.origin}/fetch`);
@@ -303,7 +381,7 @@ test("in-page fetch(): the page loads, the forbidden fetch never arrives, the bl
 test("WebSocket: the handshake to the forbidden server never arrives", { timeout: 60_000 }, async (t) => {
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
   await goto(session.id, `${a.origin}/ws`);
@@ -316,7 +394,7 @@ test("WebSocket: the handshake to the forbidden server never arrives", { timeout
 test("bypass spellings of 127.0.0.1 with the forbidden port are refused; the same spellings with the allowed port work", { timeout: 60_000 }, async (t) => {
   const b = await serve();
   const a = await serve(pagesPointingAt(b));
-  t.after(async () => { await a.close(); await b.close(); });
+  t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
   const session = await open(t, { allowedHosts: `127.0.0.1:${a.port}` });
   // `new URL` folds these three to 127.0.0.1 — so it is the PORT that refuses
@@ -345,7 +423,7 @@ test("bypass spellings of 127.0.0.1 with the forbidden port are refused; the sam
 
 test("DNS pin: a listed name is resolved by OUR resolver and Chromium is pinned to that address", { timeout: 60_000 }, async (t) => {
   const a = await serve();
-  t.after(() => a.close());
+  t.after(() => a.close(), HOOK);
   const name = "pinned.demomotion.invalid";
 
   // Assertion zero: the name has no real binding on this host, so a hit can
@@ -426,7 +504,7 @@ async function targetsScenario(t: any) {
       <button id="open-hop" onclick="window.open(location.origin + '/redirect')">hop</button>`),
     "/plain": html(`<h1>A</h1>`)
   });
-  t.after(async () => { await a.close(); await b.close(); await c.close(); });
+  t.after(async () => { await a.close(); await b.close(); await c.close(); }, HOOK);
   return { a, b, c };
 }
 

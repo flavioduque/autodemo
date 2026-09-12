@@ -93,7 +93,69 @@ Two design decisions do the heavy lifting:
 
 ## Quick start
 
-Requires **Node.js 22+**, **ffmpeg** on `PATH`, and a Chromium. Add to your MCP client:
+Requires **Node.js 22+**, **ffmpeg** on `PATH`, and a Chromium.
+
+```bash
+node --version && ffmpeg -version | head -1
+```
+
+Pick your client. Everything below was run on the machine that wrote it unless the block says otherwise.
+
+<details>
+<summary><b>Claude Code</b> — one command, no file to edit</summary>
+
+```bash
+claude mcp add demomotion \
+  -e DEMOMOTION_BROWSER_CHANNEL=chrome \
+  -e DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -- npx -y demomotion
+```
+
+Confirm with `claude mcp list` — it should print `demomotion: npx -y demomotion - ✔ Connected`.
+</details>
+
+<details>
+<summary><b>Codex CLI</b> — TOML, not JSON</summary>
+
+```bash
+codex mcp add demomotion \
+  --env DEMOMOTION_BROWSER_CHANNEL=chrome \
+  --env DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -- npx -y demomotion
+```
+
+Or by hand in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.demomotion]
+command = "npx"
+args = ["-y", "demomotion"]
+
+[mcp_servers.demomotion.env]
+DEMOMOTION_BROWSER_CHANNEL = "chrome"
+DEMOMOTION_ALLOWED_HOSTS = "localhost,127.0.0.1"
+```
+
+`codex mcp list` shows `Status: enabled` and masks env values — that is config state, not a health check.
+</details>
+
+<details>
+<summary><b>Gemini CLI</b> — note: no <code>--</code> separator</summary>
+
+```bash
+gemini mcp add -s user demomotion \
+  -e DEMOMOTION_BROWSER_CHANNEL=chrome \
+  -e DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  npx -y demomotion
+```
+
+Writes `mcpServers` into `~/.gemini/settings.json`. On some hosts `gemini mcp list` reports `Disconnected` for every server, including known-good ones — treat that column as unreliable rather than as a verdict on this server.
+</details>
+
+<details>
+<summary><b>Cursor</b>, <b>Claude Desktop</b>, <b>Antigravity</b>, <b>Windsurf</b>, <b>Cline</b>, <b>Gemini Code Assist</b></summary>
+
+All take the identical block, only the file differs:
 
 ```json
 {
@@ -101,31 +163,98 @@ Requires **Node.js 22+**, **ffmpeg** on `PATH`, and a Chromium. Add to your MCP 
     "demomotion": {
       "command": "npx",
       "args": ["-y", "demomotion"],
-      "env": { "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1" }
+      "env": {
+        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
+        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+      }
     }
   }
 }
 ```
 
-The first run downloads the package and its renderer (~400 MB, dominated by HyperFrames' `onnxruntime-node`). If the server logs `no usable capture browser`, either install Playwright's Chromium (`npx playwright@1.63.0 install chromium`) or drive an installed browser with `"env": { "DEMOMOTION_BROWSER_CHANNEL": "chrome" }` — required on macOS 13, which has no bundled build.
+| Client | File |
+|---|---|
+| Cursor | `~/.cursor/mcp.json`, or `.cursor/mcp.json` per project |
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` · `%APPDATA%\Claude\claude_desktop_config.json` · `~/.config/Claude/claude_desktop_config.json` |
+| Antigravity | `~/.gemini/antigravity/mcp_config.json` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Cline | `cline_mcp_settings.json` — open it from Cline's MCP panel; the path moves between versions |
+| Gemini Code Assist | `~/.gemini/settings.json`, or `.gemini/settings.json` per project |
 
-Sessions, captures and renders are written under `~/.demomotion/sessions/` (override with `DEMOMOTION_HOME`); every tool result returns the absolute path. `demomotion render project.json --out demo.mp4` re-renders an edited project from the shell.
+Claude Desktop's config usually has no `mcpServers` key yet — add it as a new top-level key next to the ones already there. Its logs are in `~/Library/Logs/Claude/mcp*.log`.
 
-The whole pipeline is one call:
+*Cursor, Claude Desktop and Antigravity shapes were read from the real config files on a machine that has them installed; Windsurf and Cline were read from the applications' own bundles. None of the six was confirmed end-to-end through its UI.*
+</details>
+
+<details>
+<summary><b>VS Code / Copilot agent mode</b> — different key: <code>servers</code>, not <code>mcpServers</code></summary>
+
+`.vscode/mcp.json` in the project, or your user `mcp.json`:
+
+```json
+{
+  "servers": {
+    "demomotion": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "demomotion"],
+      "env": {
+        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
+        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+      }
+    }
+  }
+}
+```
+
+Copying an `mcpServers` example here silently does nothing. *Read from VS Code's own bundle, not confirmed through the UI.*
+</details>
+
+<details>
+<summary><b>Zed</b>, or any other MCP client</summary>
+
+Zed changes its settings key between releases, so rather than print one that may be wrong: Agent Panel → **Add Custom Server**, and enter command `npx`, args `-y demomotion`, plus the two env vars.
+
+Any stdio MCP client works the same way. To check the server by hand:
+
+```bash
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}\n' | npx -y demomotion
+```
+
+The first line of stdout must start with `{`.
+</details>
+
+**The two env vars matter.** `DEMOMOTION_ALLOWED_HOSTS` is a strict allowlist that defaults to `localhost, 127.0.0.1, ::1` — to record any other host, add it there or the server refuses by design. `DEMOMOTION_BROWSER_CHANNEL=chrome` drives an installed browser, and is required on hosts where Playwright ships no bundled Chromium (macOS 13, for one).
+
+The first run downloads ~400 MB, dominated by the renderer's `onnxruntime-node`. Sessions, captures and renders land under `~/.demomotion/sessions/` (`DEMOMOTION_HOME` overrides); every tool result returns absolute paths.
+
+### Your first video
+
+The repo ships a showcase app, so you can get an MP4 without having an app of your own:
+
+```bash
+pnpm showcase        # serves http://127.0.0.1:4322
+```
+
+Then one call:
 
 ```json
 { "tool": "demo_create", "arguments": {
-  "url": "http://localhost:3000/signup", "title": "Signup", "pacing": "product-demo",
+  "url": "http://127.0.0.1:4322/signup", "title": "Signup", "pacing": "product-demo",
   "steps": [
-    { "action": "fill",  "selector": "[data-testid=\"name\"]",   "value": "Inês Corvelo",   "label": "Your name opens the workspace" },
-    { "action": "fill",  "selector": "[data-testid=\"email\"]",  "value": "ines@studio.com", "label": "One e-mail, no verification step" },
-    { "action": "click", "selector": "[data-testid=\"submit\"]", "label": "The workspace is ready" },
+    { "action": "fill",  "selector": "[data-testid=\"signup-name-input\"]",  "value": "Ada Lovelace",    "label": "Your name opens the workspace" },
+    { "action": "fill",  "selector": "[data-testid=\"signup-email-input\"]", "value": "ada@example.com", "label": "One e-mail, no verification step" },
+    { "action": "click", "selector": "[data-testid=\"signup-submit\"]",      "label": "The workspace is ready" },
     { "action": "wait",  "ms": 1200 }
   ] } }
-→ { "video": "…/final.mp4", "project": "…/project.json", "capture": "…/capture.json", "durationMs": 9800, … }
+→ { "video": "…/final.mp4", "project": "…/project.json", "capture": "…/capture.json", "durationMs": 11159, … }
 ```
 
-Pass `"pacing": "social"` and the same steps come out 1080×1920. A step that fails returns `isError` with the step index, selector and cause, the capture recorded so far, and no browser left running.
+Pass `"pacing": "social"` and the same steps come out 1080×1920. A step that fails returns `isError` naming the step index, the selector and the cause — with the capture recorded so far kept, and no browser left running.
+
+Editing needs no re-recording: `project_update` the project, then `render_video` again. `demomotion render project.json --out demo.mp4` does it from the shell.
+
+New here? **[docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md)** walks the whole path per client. When something breaks, **[docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)** has the real error text and the fix.
 
 Contributors: `pnpm install && pnpm --filter demomotion exec playwright install chromium && pnpm typecheck && pnpm test && pnpm build`; `pnpm dev:mcp` runs the server from source.
 
@@ -184,7 +313,7 @@ Every layer above — zoom, cursor, captions, callouts — is anchored to *when 
 - **Redaction.** Values sent through `browser_fill` are stripped from `capture.json`. (A target app may still *display* them on screen — use seeded demo data and dedicated accounts.)
 - **No phoning home.** HyperFrames sends anonymous render telemetry to its vendor. Because DemoMotion renders on its users' behalf, it sets `HYPERFRAMES_NO_TELEMETRY=1` in the render process by default. Set the variable yourself (to any value) and DemoMotion keeps your choice.
 
-See [`.env.example`](./.env.example) for every supported variable, and [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full design.
+See [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md) for per-client setup, [`docs/TROUBLESHOOTING.md`](./docs/TROUBLESHOOTING.md) for the failures this produces in practice, [`.env.example`](./.env.example) for every supported variable, and [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full design.
 
 ## Repository layout
 

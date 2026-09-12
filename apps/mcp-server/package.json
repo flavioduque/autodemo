@@ -28,7 +28,7 @@
     "typescript"
   ],
   "bin": {
-    "demomotion": "./dist/cli.js"
+    "demomotion": "dist/cli.js"
   },
   "files": [
     "dist"

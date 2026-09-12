@@ -1,7 +1,7 @@
 {
   "name": "demomotion",
-  "version": "0.2.0",
-  "description": "MCP server that lets an AI agent operate your web app, record it deterministically and render a polished product-demo MP4 \u2014 no human in the edit.",
+  "version": "0.3.0",
+  "description": "MCP server that lets an AI agent operate your web app, record it deterministically and render a polished product-demo MP4 — no human in the edit.",
   "license": "MIT",
   "type": "module",
   "repository": {

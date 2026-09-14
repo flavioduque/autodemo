@@ -23,3 +23,6 @@ apps/*/data/
 # copiados da raiz pelo build do pacote publicável (apps/mcp-server/scripts/build.mjs)
 apps/mcp-server/README.md
 apps/mcp-server/LICENSE
+
+# Preferências locais do Claude Code (pessoais, não publicadas)
+.claude/settings.local.json

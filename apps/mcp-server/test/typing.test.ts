@@ -21,8 +21,8 @@ import { startSession, goto, click, fill, stopSession, getSession } from "../src
 // need a browser but no ffmpeg, except where noted.
 // ---------------------------------------------------------------------------
 
-if (process.platform === "darwin" && !process.env.DEMOMOTION_BROWSER_CHANNEL) {
-  process.env.DEMOMOTION_BROWSER_CHANNEL = "chrome";
+if (process.platform === "darwin" && !process.env.AUTODEMO_BROWSER_CHANNEL) {
+  process.env.AUTODEMO_BROWSER_CHANNEL = "chrome";
 }
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -185,11 +185,11 @@ test("the typed value reaches the field and still never reaches capture.json",
   { timeout: 120_000 }, async (t) => {
   const SECRET = "Zx9-Hopper-1906";
 
-  const previousMode = process.env.DEMOMOTION_CAPTURE;
-  process.env.DEMOMOTION_CAPTURE = "record-video";
+  const previousMode = process.env.AUTODEMO_CAPTURE;
+  process.env.AUTODEMO_CAPTURE = "record-video";
   t.after(() => {
-    if (previousMode === undefined) delete process.env.DEMOMOTION_CAPTURE;
-    else process.env.DEMOMOTION_CAPTURE = previousMode;
+    if (previousMode === undefined) delete process.env.AUTODEMO_CAPTURE;
+    else process.env.AUTODEMO_CAPTURE = previousMode;
   });
 
   const { session, origin } = await openSession(t);

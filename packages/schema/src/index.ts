@@ -66,7 +66,7 @@ export const CalloutSchema = z.object({
  *
  * WHY PER-WORD TIMESTAMPS NOW, WITH NO AUDIO: today they are filled by a
  * deterministic synthetic distribution across the caption window (see
- * `distributeWords` in @demomotion/core). When voiceover/TTS lands, the SAME
+ * `distributeWords` in @autodemo/core). When voiceover/TTS lands, the SAME
  * field is filled from real audio alignment and the compositor does not change
  * a line — it already reads word windows, not a paragraph. The structure is
  * modelled once, correctly, instead of being migrated later.

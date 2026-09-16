@@ -17,7 +17,7 @@ import {
   sourceMs, outputMs, durationMs, frameIndex,
   addMs, subMs, spanMs, atSpeed, minOf, frameIndexAt, frameSourceMs, captureEnd,
   type SourceTimeMs, type OutputTimeMs, type DurationMs, type FrameIndex
-} from "@demomotion/schema";
+} from "@autodemo/schema";
 import { sourceToOutput, outputToSource, isCut, cursorAt, framingCentreAt, distributeWords, type EditSegment, type EditList } from "../src/index.ts";
 
 const src: SourceTimeMs = sourceMs(500);

@@ -1,16 +1,16 @@
 {
-  "name": "demomotion",
+  "name": "autodemo",
   "version": "0.3.0",
   "description": "MCP server that lets an AI agent operate your web app, record it deterministically and render a polished product-demo MP4 — no human in the edit.",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/flavioduque/demomotion.git",
+    "url": "git+https://github.com/flavioduque/autodemo.git",
     "directory": "apps/mcp-server"
   },
-  "homepage": "https://github.com/flavioduque/demomotion#readme",
-  "bugs": "https://github.com/flavioduque/demomotion/issues",
+  "homepage": "https://github.com/flavioduque/autodemo#readme",
+  "bugs": "https://github.com/flavioduque/autodemo/issues",
   "keywords": [
     "mcp",
     "model-context-protocol",
@@ -28,7 +28,7 @@
     "typescript"
   ],
   "bin": {
-    "demomotion": "dist/cli.js"
+    "autodemo": "dist/cli.js"
   },
   "files": [
     "dist"
@@ -52,9 +52,9 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
-    "@demomotion/compositor": "workspace:*",
-    "@demomotion/core": "workspace:*",
-    "@demomotion/schema": "workspace:*",
+    "@autodemo/compositor": "workspace:*",
+    "@autodemo/core": "workspace:*",
+    "@autodemo/schema": "workspace:*",
     "@types/node": "^24.3.1",
     "esbuild": "^0.28.2",
     "tsx": "^4.20.5",

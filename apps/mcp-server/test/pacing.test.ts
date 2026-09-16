@@ -10,7 +10,7 @@ import { PACING_NAMES, PACING_PRESETS, renderPacingTable } from "../src/pacing.t
 // that live in two places: the code drifts from the table an agent reads, or
 // the table drifts from the code. The second test below makes both a failure.
 
-const SKILL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../skills/demomotion/SKILL.md");
+const SKILL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../skills/autodemo/SKILL.md");
 
 test("the three presets carry the numbers SKILL.md section 2 promises, typed here by hand", () => {
   assert.deepEqual(PACING_NAMES, ["product-demo", "tutorial", "social"]);

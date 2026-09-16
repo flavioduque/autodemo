@@ -4,18 +4,18 @@ Requirements: Node.js 22+, pnpm 10.
 
 ```bash
 pnpm install
-pnpm --filter demomotion exec playwright install chromium
+pnpm --filter autodemo exec playwright install chromium
 pnpm typecheck
 pnpm test
 pnpm build
 ```
 
 On hosts without a bundled Chromium build for your platform, set
-`DEMOMOTION_BROWSER_CHANNEL=chrome` to drive a locally installed Google Chrome.
+`AUTODEMO_BROWSER_CHANNEL=chrome` to drive a locally installed Google Chrome.
 
 To run the suite against a specific Chromium binary — the `chrome-headless-shell`
 CI uses, say, when it is not installed as a channel on your host — set
-`DEMOMOTION_BROWSER_EXECUTABLE=/path/to/binary`. It wins over the channel and
+`AUTODEMO_BROWSER_EXECUTABLE=/path/to/binary`. It wins over the channel and
 over the bundled build.
 
 ## Slow tests
@@ -29,18 +29,18 @@ Everything heavier is behind its own gate:
 
 ```bash
 # render-level tests (compositor pixels). Needs a browser AND ffmpeg.
-DEMOMOTION_RENDER_TESTS=1 pnpm --filter demomotion test
+AUTODEMO_RENDER_TESTS=1 pnpm --filter autodemo test
 
 # capture time-base alignment
-DEMOMOTION_SLOW=1 pnpm --filter demomotion test
+AUTODEMO_SLOW=1 pnpm --filter autodemo test
 
 # the MCP protocol end-to-end test: spawns the server and speaks JSON-RPC over
 # stdio, driving capture -> build -> edit -> render, twice (~4 min)
-DEMOMOTION_E2E_TESTS=1 pnpm --filter demomotion test
+AUTODEMO_E2E_TESTS=1 pnpm --filter autodemo test
 ```
 
-Add `DEMOMOTION_BROWSER_CHANNEL=chrome` on a host without bundled Chromium, and
-`DEMOMOTION_E2E_DEBUG=1` to see the spawned server's stderr.
+Add `AUTODEMO_BROWSER_CHANNEL=chrome` on a host without bundled Chromium, and
+`AUTODEMO_E2E_DEBUG=1` to see the spawned server's stderr.
 
 ### The render tests' source clip
 

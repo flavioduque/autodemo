@@ -1,5 +1,5 @@
 {
-  "name": "@demomotion/schema",
+  "name": "@autodemo/schema",
   "version": "0.1.0",
   "type": "module",
   "exports": "./src/index.ts",

@@ -3,8 +3,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs/promises";
-import { DemoProjectSchema, type DemoProject } from "@demomotion/schema";
-import { generateComposition } from "@demomotion/compositor";
+import { DemoProjectSchema, type DemoProject } from "@autodemo/schema";
+import { generateComposition } from "@autodemo/compositor";
 
 const require = createRequire(import.meta.url);
 
@@ -14,7 +14,7 @@ function resolveDependencyFile(specifier: string): string {
 }
 
 /**
- * HyperFrames sends anonymous render telemetry to HeyGen. DemoMotion renders on
+ * HyperFrames sends anonymous render telemetry to HeyGen. AutoDemo renders on
  * its users' behalf, so it opts out by default. An operator who deliberately
  * sets the variable — including to "0" — keeps whatever they chose.
  */
@@ -32,7 +32,7 @@ export async function renderCompositionHtml(html: string, sourceVideo: string, o
   const out = path.resolve(outputPath);
   await fs.mkdir(path.dirname(out), { recursive: true });
 
-  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-render-"));
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-render-"));
   try {
     await fs.copyFile(sourceVideo, path.join(workDir, videoSrc));
     await fs.copyFile(resolveDependencyFile("gsap/dist/gsap.min.js"), path.join(workDir, "gsap.min.js"));

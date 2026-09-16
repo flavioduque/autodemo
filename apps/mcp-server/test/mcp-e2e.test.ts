@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { McpStdioClient, step } from "./mcp-stdio-client.ts";
 
 // ---------------------------------------------------------------------------
-// The ONLY test that talks to DemoMotion the way a real MCP client does.
+// The ONLY test that talks to AutoDemo the way a real MCP client does.
 //
 // Everything else in this repo calls TypeScript functions. That leaves the wire
 // itself — JSON-RPC framing, the zod -> JSON Schema conversion published by
@@ -23,15 +23,15 @@ import { McpStdioClient, step } from "./mcp-stdio-client.ts";
 // It is slow (two real Chrome captures and two real renders) and needs Chrome
 // plus ffmpeg/ffprobe on PATH, so it is gated:
 //
-//   DEMOMOTION_E2E_TESTS=1 DEMOMOTION_BROWSER_CHANNEL=chrome \
-//     pnpm --filter demomotion test
+//   AUTODEMO_E2E_TESTS=1 AUTODEMO_BROWSER_CHANNEL=chrome \
+//     pnpm --filter autodemo test
 //
-// Progress markers go to stderr as the calls happen; DEMOMOTION_E2E_DEBUG=1 also
+// Progress markers go to stderr as the calls happen; AUTODEMO_E2E_DEBUG=1 also
 // forwards the spawned server's own stderr.
 // ---------------------------------------------------------------------------
 
-const E2E = process.env.DEMOMOTION_E2E_TESTS === "1";
-const skip = E2E ? false : "set DEMOMOTION_E2E_TESTS=1 to run the MCP protocol end-to-end test";
+const E2E = process.env.AUTODEMO_E2E_TESTS === "1";
+const skip = E2E ? false : "set AUTODEMO_E2E_TESTS=1 to run the MCP protocol end-to-end test";
 const TIMEOUT = 1_500_000;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -42,8 +42,8 @@ const SHOWCASE_SERVER = path.join(REPO, "fixtures/showcase-app/server.mjs");
 const REPO_SESSIONS = path.join(REPO, "data/sessions");
 
 // The bundled Chromium cannot install on macOS 13; drive the installed Chrome.
-if (process.platform === "darwin" && !process.env.DEMOMOTION_BROWSER_CHANNEL) {
-  process.env.DEMOMOTION_BROWSER_CHANNEL = "chrome";
+if (process.platform === "darwin" && !process.env.AUTODEMO_BROWSER_CHANNEL) {
+  process.env.AUTODEMO_BROWSER_CHANNEL = "chrome";
 }
 
 const run = promisify(execFile);
@@ -74,7 +74,7 @@ const RENDER_CALL_TIMEOUT_MS = 900_000;
 
 /**
  * Spawns the server the way the README used to tell MCP clients to: the TypeScript
- * entry under tsx. Sessions are pinned to the test's own cwd with DEMOMOTION_HOME
+ * entry under tsx. Sessions are pinned to the test's own cwd with AUTODEMO_HOME
  * so every path the server reports can be checked to stay inside it.
  */
 function startServer(cwd: string): Promise<McpStdioClient> {
@@ -82,8 +82,8 @@ function startServer(cwd: string): Promise<McpStdioClient> {
     command: process.execPath,
     args: ["--import", TSX_LOADER, SERVER_ENTRY],
     cwd,
-    env: { ...process.env, DEMOMOTION_HOME: cwd },
-    clientName: "demomotion-e2e",
+    env: { ...process.env, AUTODEMO_HOME: cwd },
+    clientName: "autodemo-e2e",
     onToolCall: (name) => INVOKED.add(name)
   });
 }
@@ -190,7 +190,7 @@ test("a real MCP client drives capture, build, edit and render end to end over s
   // realpath, not the raw mkdtemp result: on macOS os.tmpdir() is /var/... while
   // the child's path.resolve() answers /private/var/..., and the "did it stay
   // inside the temp cwd" assertions below compare the two.
-  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-")));
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-e2e-")));
   const fixture = await startFixtureServer();
   const client = await startServer(cwd);
   try {
@@ -386,7 +386,7 @@ test("a real MCP client drives capture, build, edit and render end to end over s
 test("demo_finalize takes a live session all the way to an MP4 in one call",
   { skip, timeout: TIMEOUT }, async () => {
   const sessionsBefore = await repoSessionDirs();
-  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-final-")));
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-e2e-final-")));
   const fixture = await startFixtureServer();
   const client = await startServer(cwd);
   try {
@@ -475,7 +475,7 @@ function errorPayload(result: { isError: boolean; text: string }): any {
 test("demo_create turns a URL and a step list into an MP4 in one call",
   { skip, timeout: TIMEOUT }, async () => {
   const sessionsBefore = await repoSessionDirs();
-  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-create-")));
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-e2e-create-")));
   const showcase = await startShowcaseServer();
   const client = await startServer(cwd);
   try {
@@ -541,7 +541,7 @@ test("demo_create turns a URL and a step list into an MP4 in one call",
 
 test("demo_create with the social preset publishes vertical without being told",
   { skip, timeout: TIMEOUT }, async () => {
-  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-social-")));
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-e2e-social-")));
   const showcase = await startShowcaseServer();
   const client = await startServer(cwd);
   try {
@@ -582,7 +582,7 @@ test("demo_create with the social preset publishes vertical without being told",
 
 test("a step that fails half-way names itself, keeps the capture, and leaves no browser behind",
   { skip, timeout: TIMEOUT }, async () => {
-  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-fail-")));
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-e2e-fail-")));
   const showcase = await startShowcaseServer();
   const client = await startServer(cwd);
   try {
@@ -634,7 +634,7 @@ test("a step that fails half-way names itself, keeps the capture, and leaves no 
 
 test("a goto off the allowlist fails with the network policy's own message, and cleans up",
   { skip, timeout: TIMEOUT }, async () => {
-  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-e2e-policy-")));
+  const cwd = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-e2e-policy-")));
   const showcase = await startShowcaseServer();
   const client = await startServer(cwd);
   try {
@@ -646,8 +646,8 @@ test("a goto off the allowlist fails with the network policy's own message, and 
     const payload = errorPayload(failed);
     assert.equal(payload.stage, "step");
     assert.deepEqual(payload.step, { index: 0, action: "goto", url: "http://example.com/" });
-    assert.match(payload.cause, /^DemoMotion refused http:\/\/example\.com\/: "example\.com:80" is not in DEMOMOTION_ALLOWED_HOSTS/);
-    assert.match(payload.error, /^demo_create failed at step 0 \(goto http:\/\/example\.com\/\): DemoMotion refused/);
+    assert.match(payload.cause, /^AutoDemo refused http:\/\/example\.com\/: "example\.com:80" is not in AUTODEMO_ALLOWED_HOSTS/);
+    assert.match(payload.error, /^demo_create failed at step 0 \(goto http:\/\/example\.com\/\): AutoDemo refused/);
     // The refusal is also on the record, as session_status would have shown it.
     const block = (payload.blockedRequests as Array<any>).find((b) => b.host === "example.com");
     assert.ok(block, `no blocked request for example.com in ${JSON.stringify(payload.blockedRequests)}`);

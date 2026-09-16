@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DemoProjectSchema, durationMs, type DemoProject, type DemoProjectInput } from "@demomotion/schema";
-import { buildAutoZooms, buildCaptionSkeleton } from "@demomotion/core";
+import { DemoProjectSchema, durationMs, type DemoProject, type DemoProjectInput } from "@autodemo/schema";
+import { buildAutoZooms, buildCaptionSkeleton } from "@autodemo/core";
 
 export type BuildProjectOptions = {
   /**

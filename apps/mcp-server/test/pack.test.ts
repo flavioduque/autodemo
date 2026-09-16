@@ -20,11 +20,11 @@ import { McpStdioClient, step } from "./mcp-stdio-client.ts";
 // It downloads the whole dependency tree from the registry (hyperframes pulls
 // sharp, onnxruntime-node, puppeteer-core...), so it is gated:
 //
-//   DEMOMOTION_PACK_TESTS=1 pnpm --filter demomotion test:pack
+//   AUTODEMO_PACK_TESTS=1 pnpm --filter autodemo test:pack
 // ---------------------------------------------------------------------------
 
-const PACK = process.env.DEMOMOTION_PACK_TESTS === "1";
-const skip = PACK ? false : "set DEMOMOTION_PACK_TESTS=1 to pack, install and drive the published package";
+const PACK = process.env.AUTODEMO_PACK_TESTS === "1";
+const skip = PACK ? false : "set AUTODEMO_PACK_TESTS=1 to pack, install and drive the published package";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
@@ -44,7 +44,7 @@ const npm = (args: string[], cwd: string) =>
 test("the packed tarball installs in a fresh directory and speaks MCP over stdio",
   { skip, timeout: 20 * 60_000 }, async (t) => {
   const manifest = JSON.parse(await fs.readFile(path.join(PKG, "package.json"), "utf8"));
-  const scratch = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-pack-")));
+  const scratch = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-pack-")));
   t.after(() => fs.rm(scratch, { recursive: true, force: true }));
 
   // --- npm pack -----------------------------------------------------------
@@ -71,7 +71,7 @@ test("the packed tarball installs in a fresh directory and speaks MCP over stdio
     // reach a consumer's `npm install`.
     for (const [name, range] of Object.entries(info.bundled ?? {})) assert.fail(`bundledDependencies present: ${name}@${range}`);
     assert.equal(JSON.stringify(manifest.dependencies).includes("workspace:"), false, "a workspace: range is in dependencies");
-    for (const name of Object.keys(manifest.dependencies)) assert.doesNotMatch(name, /^@demomotion\//, `${name} must be bundled, not depended on`);
+    for (const name of Object.keys(manifest.dependencies)) assert.doesNotMatch(name, /^@autodemo\//, `${name} must be bundled, not depended on`);
   });
 
   // --- npm install in a fresh directory outside the repo --------------------
@@ -80,8 +80,8 @@ test("the packed tarball installs in a fresh directory and speaks MCP over stdio
   await fs.writeFile(path.join(install, "package.json"), JSON.stringify({ name: "npx-test", private: true }, null, 2));
   step(`npm install ${info.filename} into ${install}`);
   await npm(["install", "--no-audit", "--no-fund", "--loglevel=error", tarball], install);
-  const bin = path.join(install, "node_modules", ".bin", "demomotion");
-  const cliJs = path.join(install, "node_modules", "demomotion", "dist", "cli.js");
+  const bin = path.join(install, "node_modules", ".bin", "autodemo");
+  const cliJs = path.join(install, "node_modules", "autodemo", "dist", "cli.js");
   await fs.access(cliJs);
   // Not the repo: the installed copy must resolve its dependencies from its own node_modules.
   assert.equal(cliJs.startsWith(PKG), false);
@@ -97,8 +97,8 @@ test("the packed tarball installs in a fresh directory and speaks MCP over stdio
     const version = await runBin("--version");
     assert.equal(version.stdout.trim(), manifest.version);
     const help = await runBin("--help");
-    assert.match(help.stdout, /demomotion render <project\.json>/);
-    assert.match(help.stdout, /"npx", "args": \["-y", "demomotion"\]/);
+    assert.match(help.stdout, /autodemo render <project\.json>/);
+    assert.match(help.stdout, /"npx", "args": \["-y", "autodemo"\]/);
     // The negative half: a bad verb fails, by name, with a non-zero exit.
     await assert.rejects(runBin("frobnicate"), (error: any) => {
       assert.equal(error.code, 2);
@@ -112,8 +112,8 @@ test("the packed tarball installs in a fresh directory and speaks MCP over stdio
       command: process.platform === "win32" ? process.execPath : bin,
       args: process.platform === "win32" ? [cliJs] : [],
       cwd: install,
-      env: { ...process.env, DEMOMOTION_HOME: install },
-      clientName: "demomotion-pack"
+      env: { ...process.env, AUTODEMO_HOME: install },
+      clientName: "autodemo-pack"
     });
     try {
       assert.equal(client.firstStdoutChunk?.[0], "{", `stdout did not start with JSON-RPC: ${JSON.stringify(client.firstStdoutChunk?.slice(0, 80))}`);
@@ -125,8 +125,8 @@ test("the packed tarball installs in a fresh directory and speaks MCP over stdio
       // The startup line names where sessions go — the absolute directory the
       // MCP results will point into — on stderr, never stdout.
       await new Promise((r) => setTimeout(r, 300));
-      assert.match(client.stderr, /DemoMotion MCP .* running on stdio; sessions are written under /);
-      assert.ok(client.stderr.includes(path.join(install, "sessions")), `startup line does not name DEMOMOTION_HOME/sessions: ${client.stderr}`);
+      assert.match(client.stderr, /AutoDemo MCP .* running on stdio; sessions are written under /);
+      assert.ok(client.stderr.includes(path.join(install, "sessions")), `startup line does not name AUTODEMO_HOME/sessions: ${client.stderr}`);
     } finally {
       client.close();
     }
@@ -138,18 +138,18 @@ test("the packed tarball installs in a fresh directory and speaks MCP over stdio
       args: [cliJs, "mcp"],
       cwd: install,
       // PATH without ffmpeg, and a channel that cannot exist: both warnings must fire.
-      env: { ...process.env, DEMOMOTION_HOME: install, PATH: path.dirname(process.execPath), DEMOMOTION_BROWSER_CHANNEL: "msedge-canary" },
-      clientName: "demomotion-pack"
+      env: { ...process.env, AUTODEMO_HOME: install, PATH: path.dirname(process.execPath), AUTODEMO_BROWSER_CHANNEL: "msedge-canary" },
+      clientName: "autodemo-pack"
     });
     try {
       await new Promise((r) => setTimeout(r, 500));
-      const warnings = client.stderr.split("\n").filter((line) => line.startsWith("demomotion: warning: "));
+      const warnings = client.stderr.split("\n").filter((line) => line.startsWith("autodemo: warning: "));
       const browser = warnings.find((w) => /no usable capture browser/.test(w));
       const ffmpeg = warnings.find((w) => /ffmpeg/.test(w));
       assert.ok(browser, `no browser warning in:\n${client.stderr}`);
       assert.ok(ffmpeg, `no ffmpeg warning in:\n${client.stderr}`);
       assert.match(browser, /npx playwright@1\.63\.0 install chromium/);
-      assert.match(browser, /DEMOMOTION_BROWSER_CHANNEL=chrome/);
+      assert.match(browser, /AUTODEMO_BROWSER_CHANNEL=chrome/);
       assert.match(ffmpeg, /session_stop/);
       // ...and the wire is still clean: the server answered initialize with JSON first.
       assert.equal(client.firstStdoutChunk?.[0], "{");

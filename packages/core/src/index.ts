@@ -1,7 +1,7 @@
 import {
   type DemoAction, type DemoZoom, type DurationMs,
   SOURCE_ZERO, durationMs, addMs, subMs, minOf, maxOf, captureEnd
-} from "@demomotion/schema";
+} from "@autodemo/schema";
 
 /** How far ahead of the interaction a zoom opens: the eye arrives before the click. */
 const ZOOM_LEAD_MS: DurationMs = durationMs(220);

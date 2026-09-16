@@ -1,4 +1,4 @@
-import { type DemoAction, type SourceTimeMs, type DurationMs, durationMs, addMs, subMs, spanMs, maxOf } from "@demomotion/schema";
+import { type DemoAction, type SourceTimeMs, type DurationMs, durationMs, addMs, subMs, spanMs, maxOf } from "@autodemo/schema";
 
 export type CursorSample = { x: number; y: number; visible: boolean; clickPhase: number | null };
 export type CursorKeyframe = { sourceMs: SourceTimeMs; x: number; y: number; click: boolean };

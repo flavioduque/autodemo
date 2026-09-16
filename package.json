@@ -1,12 +1,12 @@
 {
-  "name": "demomotion-mcp",
+  "name": "autodemo-mcp",
   "private": true,
   "version": "0.3.0",
   "packageManager": "pnpm@10.17.1",
   "scripts": {
     "build": "pnpm -r --no-bail build",
-    "dev:mcp": "pnpm --filter demomotion dev",
-    "test:pack": "pnpm --filter demomotion test:pack",
+    "dev:mcp": "pnpm --filter autodemo dev",
+    "test:pack": "pnpm --filter autodemo test:pack",
     "typecheck": "pnpm -r --no-bail typecheck",
     "test": "pnpm -r --no-bail --if-present test",
     "fixture": "node fixtures/target-app/server.mjs",

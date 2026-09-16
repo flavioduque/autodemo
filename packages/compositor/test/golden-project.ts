@@ -1,4 +1,4 @@
-import { DemoProjectSchema, type DemoProject } from "@demomotion/schema";
+import { DemoProjectSchema, type DemoProject } from "@autodemo/schema";
 
 /**
  * The project behind `test/golden/native-16x9.html`.

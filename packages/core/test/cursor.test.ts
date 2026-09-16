@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { cursorAt, CURSOR_APPROACH_MS, CURSOR_PULSE_MS } from "../src/cursor.ts";
 import { sourceToOutput, outputToSource, type EditList } from "../src/editlist.ts";
-import { sourceMs, ZERO_MS } from "@demomotion/schema";
+import { sourceMs, ZERO_MS } from "@autodemo/schema";
 
 /**
  * Synthetic track, hand-chosen so every expected value below is independent of

@@ -1,9 +1,9 @@
 ---
-name: demomotion
-description: Autonomously create polished product demo videos by operating a web application through the DemoMotion MCP server — one demo_create call from a URL, an explicit step list and a pacing preset to a finished MP4; or step by step, recording a deterministic capture, compiling an editable project, cutting dead time, writing word-by-word narration, and rendering with the HyperFrames compositor.
+name: autodemo
+description: Autonomously create polished product demo videos by operating a web application through the AutoDemo MCP server — one demo_create call from a URL, an explicit step list and a pacing preset to a finished MP4; or step by step, recording a deterministic capture, compiling an editable project, cutting dead time, writing word-by-word narration, and rendering with the HyperFrames compositor.
 ---
 
-# DemoMotion Agent Skill
+# AutoDemo Agent Skill
 
 You operate a product, then you edit the recording as data. Nothing is baked into
 the pixels: every creative decision lives in `project.json` and can be changed and
@@ -169,7 +169,7 @@ replaces the preset's, it does not add to it.
 `session_start` — defaults `1920x1080`, `headless: false` for local production.
 Returns `sessionId`; every browser tool needs it.
 
-- `browser_goto` — `http`/`https` only, subject to `DEMOMOTION_ALLOWED_HOSTS`
+- `browser_goto` — `http`/`https` only, subject to `AUTODEMO_ALLOWED_HOSTS`
   (default: `localhost, 127.0.0.1, ::1`, every port).
 - `browser_click` / `browser_fill` — record normalized target coordinates. These
   drive both the auto-zoom and the synthetic cursor.
@@ -347,7 +347,7 @@ must be exact (a redaction, a state that must not be glimpsed), set
 
 ## Cursor — automatic, not authored
 
-The screencast does not draw the pointer, so DemoMotion composites a synthetic
+The screencast does not draw the pointer, so AutoDemo composites a synthetic
 one. There is no cursor field and nothing to send. Know how it behaves:
 
 - Its keyframes are your actions, so a click lands exactly on the control clicked.
@@ -410,7 +410,7 @@ Every tool answers with a JSON body. A failure comes back as a normal result wit
   existed.
 - `Cannot render: the project's edit list keeps no material` — your `editList`
   cut everything.
-- `DemoMotion refused <url>: "<host:port>" is not in DEMOMOTION_ALLOWED_HOSTS
+- `AutoDemo refused <url>: "<host:port>" is not in AUTODEMO_ALLOWED_HOSTS
   (currently …)` — navigation off the allowlist fails **by design**, at the
   network layer: the first navigation, a redirect the page answers with, a link
   you click, a `fetch` the page makes, a WebSocket. A refused navigation fails
@@ -418,4 +418,4 @@ Every tool answers with a JSON body. A failure comes back as a normal result wit
   for the page. `session_status` exposes every denial as `blockedRequests`
   (`kind`, `url`, `host`, `reason`) — read it after a step that behaved
   strangely. Do not look for another spelling of the host; ask the operator to
-  extend `DEMOMOTION_ALLOWED_HOSTS` and start a new session.
+  extend `AUTODEMO_ALLOWED_HOSTS` and start a new session.

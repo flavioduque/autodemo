@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildAutoZooms } from "../src/index.ts";
-import { sourceMs, durationMs, type DemoAction } from "@demomotion/schema";
+import { sourceMs, durationMs, type DemoAction } from "@autodemo/schema";
 
 const action = (overrides: Partial<DemoAction>): DemoAction => ({
   id: crypto.randomUUID(), type: "click" as const, atMs: sourceMs(1000), durationMs: durationMs(20), x: .5, y: .5, ...overrides

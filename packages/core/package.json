@@ -1,5 +1,5 @@
 {
-  "name": "@demomotion/core",
+  "name": "@autodemo/core",
   "version": "0.2.0",
   "type": "module",
   "exports": "./src/index.ts",
@@ -9,7 +9,7 @@
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@demomotion/schema": "workspace:*"
+    "@autodemo/schema": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.1",

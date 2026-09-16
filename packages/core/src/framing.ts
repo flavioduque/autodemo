@@ -1,4 +1,4 @@
-import { type DemoAction, type SourceTimeMs, spanMs } from "@demomotion/schema";
+import { type DemoAction, type SourceTimeMs, spanMs } from "@autodemo/schema";
 import { cursorTrack } from "./cursor.ts";
 
 /**

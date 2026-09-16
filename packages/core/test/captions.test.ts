@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildCaptionSkeleton, distributeWords, MIN_WORD_MS } from "../src/captions.ts";
-import { sourceMs, durationMs, ZERO_MS } from "@demomotion/schema";
+import { sourceMs, durationMs, ZERO_MS } from "@autodemo/schema";
 
 /**
  * Expected values are computed BY HAND from the rule, never by calling the code:

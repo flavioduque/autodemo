@@ -8,15 +8,15 @@ import { preflight } from "./preflight.js";
 import { PLAYWRIGHT_VERSION, VERSION } from "./versions.js";
 
 /**
- * The `demomotion` bin.
+ * The `autodemo` bin.
  *
- *   demomotion            the MCP server over stdio (what an MCP client runs)
- *   demomotion mcp        the same, spelled out
- *   demomotion render <project.json> [--out file.mp4]
- *   demomotion --version | --help
+ *   autodemo            the MCP server over stdio (what an MCP client runs)
+ *   autodemo mcp        the same, spelled out
+ *   autodemo render <project.json> [--out file.mp4]
+ *   autodemo --version | --help
  *
  * Hand-rolled on purpose: four verbs do not justify a CLI framework, and every
- * dependency here is paid for by every `npx demomotion` user on first run.
+ * dependency here is paid for by every `npx autodemo` user on first run.
  */
 
 export type CliCommand =
@@ -25,28 +25,28 @@ export type CliCommand =
   | { command: "version" }
   | { command: "help" };
 
-export const HELP = `demomotion ${VERSION} — agent-first product demo videos over MCP
+export const HELP = `autodemo ${VERSION} — agent-first product demo videos over MCP
 
 Usage:
-  demomotion                      Run the MCP server over stdio (default)
-  demomotion mcp                  Same as above
-  demomotion render <project.json> [--out <file.mp4>]
+  autodemo                      Run the MCP server over stdio (default)
+  autodemo mcp                  Same as above
+  autodemo render <project.json> [--out <file.mp4>]
                                   Render a project to MP4 (default: final.mp4 next to the project)
-  demomotion --version            Print the version
-  demomotion --help               Print this help
+  autodemo --version            Print the version
+  autodemo --help               Print this help
 
 MCP client configuration:
-  { "mcpServers": { "demomotion": { "command": "npx", "args": ["-y", "demomotion"] } } }
+  { "mcpServers": { "autodemo": { "command": "npx", "args": ["-y", "autodemo"] } } }
 
 Environment:
-  DEMOMOTION_HOME              Where sessions are written (<home>/sessions). Default: ~/.demomotion
-  DEMOMOTION_ALLOWED_HOSTS     Hosts the recorded browser may reach. Default: localhost, 127.0.0.1, ::1
-  DEMOMOTION_BROWSER_CHANNEL   Drive an installed browser (chrome, msedge) instead of the bundled Chromium
-  DEMOMOTION_BROWSER_EXECUTABLE  Path to a specific Chromium binary; wins over the channel and the bundled build
+  AUTODEMO_HOME              Where sessions are written (<home>/sessions). Default: ~/.autodemo
+  AUTODEMO_ALLOWED_HOSTS     Hosts the recorded browser may reach. Default: localhost, 127.0.0.1, ::1
+  AUTODEMO_BROWSER_CHANNEL   Drive an installed browser (chrome, msedge) instead of the bundled Chromium
+  AUTODEMO_BROWSER_EXECUTABLE  Path to a specific Chromium binary; wins over the channel and the bundled build
   HYPERFRAMES_BROWSER_PATH     Chrome for the renderer; without it HyperFrames downloads its own
 
 Needs ffmpeg and ffprobe on PATH, and a Chromium: either
-  npx playwright@${PLAYWRIGHT_VERSION} install chromium   or   DEMOMOTION_BROWSER_CHANNEL=chrome
+  npx playwright@${PLAYWRIGHT_VERSION} install chromium   or   AUTODEMO_BROWSER_CHANNEL=chrome
 `;
 
 /** Pure: argv in, a command out, or an Error naming exactly what was refused. */
@@ -96,7 +96,7 @@ export async function main(argv: string[]): Promise<number> {
   try {
     parsed = parseArgs(argv);
   } catch (error) {
-    process.stderr.write(`demomotion: ${(error as Error).message}\n\n${HELP}`);
+    process.stderr.write(`autodemo: ${(error as Error).message}\n\n${HELP}`);
     return 2;
   }
 
@@ -113,24 +113,24 @@ export async function main(argv: string[]): Promise<number> {
         process.stdout.write(`${out}\n`);
         return 0;
       } catch (error) {
-        process.stderr.write(`demomotion: render failed: ${(error as Error).message}\n`);
+        process.stderr.write(`autodemo: render failed: ${(error as Error).message}\n`);
         return 1;
       }
     }
     case "mcp": {
       void serveStdio(createServer);
-      process.stderr.write(`DemoMotion MCP ${VERSION} running on stdio; sessions are written under ${sessionsRoot()}\n`);
+      process.stderr.write(`AutoDemo MCP ${VERSION} running on stdio; sessions are written under ${sessionsRoot()}\n`);
       // Diagnostics AFTER the transport is up: a client that connects first and
       // reads the warnings second is better served than one kept waiting.
       const report = await preflight();
-      for (const warning of report.warnings) process.stderr.write(`demomotion: warning: ${warning}\n`);
+      for (const warning of report.warnings) process.stderr.write(`autodemo: warning: ${warning}\n`);
       return 0;
     }
   }
 }
 
 // Only act when this file is the process entrypoint. `argv[1]` is the path the
-// process was started with — through `node_modules/.bin/demomotion` that is the
+// process was started with — through `node_modules/.bin/autodemo` that is the
 // symlink — while `import.meta.url` is always the real file, so compare real
 // paths. Importing this module (a test of `parseArgs`) must never start anything.
 function isEntrypoint(): boolean {
@@ -149,7 +149,7 @@ if (isEntrypoint()) {
   main(process.argv.slice(2)).then((code) => {
     process.exitCode = code;
   }, (error) => {
-    process.stderr.write(`demomotion: ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+    process.stderr.write(`autodemo: ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
     process.exitCode = 1;
   });
 }

@@ -1,6 +1,6 @@
 # Security
 
-DemoMotion controls a real browser and may record sensitive information.
+AutoDemo controls a real browser and may record sensitive information.
 
 - Never record passwords, API keys, session secrets, payment data, or private customer data.
 - Values passed through `browser_fill` are redacted from `capture.json`; they can still be visible in the recorded UI.
@@ -9,7 +9,7 @@ DemoMotion controls a real browser and may record sensitive information.
 - Prefer dedicated demo accounts and seeded demo data.
 - Review the final capture before publishing.
 
-## Network allowlist (`DEMOMOTION_ALLOWED_HOSTS`)
+## Network allowlist (`AUTODEMO_ALLOWED_HOSTS`)
 
 An agent driving this server holds a real browser. Without a boundary that
 browser reaches whatever the machine reaches: `localhost:<any port>`, a cloud
@@ -21,9 +21,9 @@ enumerated (`[::ffff:127.0.0.1]` walks past every "127.0.0.0/8" check).
 Everything else must be listed explicitly.
 
 ```
-DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1,::1               # the default, spelled out
-DEMOMOTION_ALLOWED_HOSTS=127.0.0.1:5173                       # one host, one port
-DEMOMOTION_ALLOWED_HOSTS=staging.example.com,203.0.113.7,localhost,127.0.0.1,::1
+AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1,::1               # the default, spelled out
+AUTODEMO_ALLOWED_HOSTS=127.0.0.1:5173                       # one host, one port
+AUTODEMO_ALLOWED_HOSTS=staging.example.com,203.0.113.7,localhost,127.0.0.1,::1
 ```
 
 | Entry | Means |

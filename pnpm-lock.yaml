@@ -30,13 +30,13 @@ importers:
         specifier: ^4.1.11
         version: 4.6.1
     devDependencies:
-      '@demomotion/compositor':
+      '@autodemo/compositor':
         specifier: workspace:*
         version: link:../../packages/compositor
-      '@demomotion/core':
+      '@autodemo/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@demomotion/schema':
+      '@autodemo/schema':
         specifier: workspace:*
         version: link:../../packages/schema
       '@types/node':
@@ -54,10 +54,10 @@ importers:
 
   packages/compositor:
     dependencies:
-      '@demomotion/core':
+      '@autodemo/core':
         specifier: workspace:*
         version: link:../core
-      '@demomotion/schema':
+      '@autodemo/schema':
         specifier: workspace:*
         version: link:../schema
     devDependencies:
@@ -76,7 +76,7 @@ importers:
 
   packages/core:
     dependencies:
-      '@demomotion/schema':
+      '@autodemo/schema':
         specifier: workspace:*
         version: link:../schema
     devDependencies:

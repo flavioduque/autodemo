@@ -3,9 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
-import * as schema from "@demomotion/schema";
-import { DemoProjectSchema } from "@demomotion/schema";
-import { generateComposition } from "@demomotion/compositor";
+import * as schema from "@autodemo/schema";
+import { DemoProjectSchema } from "@autodemo/schema";
+import { generateComposition } from "@autodemo/compositor";
 import { buildProject, updateProject } from "../src/project.ts";
 
 /** A minimal valid project, minus whatever the test under way is varying. */
@@ -71,7 +71,7 @@ test("the orphan `trims` field no longer exists anywhere in the schema", () => {
 });
 
 test("buildProject gives a fresh project an identity editList over the whole capture", async (t) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-test-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-test-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
 
   const manifestPath = path.join(dir, "capture.json");
@@ -99,7 +99,7 @@ test("buildProject gives a fresh project an identity editList over the whole cap
 });
 
 test("updateProject persists an edit and leaves the rest of the project alone", async (t) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-test-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-test-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
 
   // Seed through the product: the project comes out of buildProject, the same
@@ -136,7 +136,7 @@ test("updateProject persists an edit and leaves the rest of the project alone", 
 });
 
 test("an existing 16:9 capture can be reframed to 9:16 without recording again", async (t) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-test-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-test-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
 
   // Seed through the product: the project comes out of buildProject, exactly as

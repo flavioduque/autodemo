@@ -64,11 +64,11 @@ test("default (variable unset): loopback only, and a metadata address is refused
   const d = await denial(policy, "http://169.254.169.254/latest/meta-data/");
   assert.equal(d.reason, "not-listed");
   assert.match(d.message, /169\.254\.169\.254/);
-  assert.match(d.message, /DEMOMOTION_ALLOWED_HOSTS/);
+  assert.match(d.message, /AUTODEMO_ALLOWED_HOSTS/);
   assert.match(d.message, /localhost, 127\.0\.0\.1, ::1/, "the message shows the current allowlist");
 });
 
-test("an empty DEMOMOTION_ALLOWED_HOSTS is the default, never allow-all", async () => {
+test("an empty AUTODEMO_ALLOWED_HOSTS is the default, never allow-all", async () => {
   for (const raw of ["", "  ", ",,"]) {
     const policy = new NetworkPolicy({ allowedHosts: raw, lookup: forbiddenLookup() });
     assert.equal(policy.source, "default", `raw=${JSON.stringify(raw)}`);
@@ -159,7 +159,7 @@ test("a listed name is refused when it resolves to an address outside the allowl
   assert.equal(d.reason, "resolves-outside-allowlist");
   assert.match(d.message, /demo\.invalid/);
   assert.match(d.message, /169\.254\.169\.254/);
-  assert.match(d.message, /DEMOMOTION_ALLOWED_HOSTS/);
+  assert.match(d.message, /AUTODEMO_ALLOWED_HOSTS/);
   assert.ok(bad.calls.includes("demo.invalid"), "the resolver was really consulted");
 });
 
@@ -332,7 +332,7 @@ test("entry syntax: host, host:port, bare or bracketed IPv6, case and trailing d
 
 test("entry syntax: wildcards, paths, credentials and bad ports are configuration errors, not silent no-ops", () => {
   for (const bad of [".example.com", "*.example.com", "host/path", "user@host", "host:abc", "host:99999", "http://host", "host?x=1", "host:0"]) {
-    assert.throws(() => parseAllowedHosts(bad), /DEMOMOTION_ALLOWED_HOSTS/, `entry ${JSON.stringify(bad)} must be rejected`);
+    assert.throws(() => parseAllowedHosts(bad), /AUTODEMO_ALLOWED_HOSTS/, `entry ${JSON.stringify(bad)} must be rejected`);
   }
   // Positive half: the message says which entry and why, and a sound list next to it still parses.
   assert.throws(() => parseAllowedHosts("127.0.0.1, .example.com"), /"\.example\.com"/);

@@ -86,12 +86,12 @@ export const projectUpdateInput = z.object({
 
 /**
  * Builds the MCP server with the full tool surface. Exported for the CLI
- * (`demomotion mcp`) and for tests; nothing here touches stdio, so importing
+ * (`autodemo mcp`) and for tests; nothing here touches stdio, so importing
  * this module never starts a transport.
  */
 export function createServer() {
   const server = new McpServer({
-    name: "demomotion",
+    name: "autodemo",
     version: VERSION,
     description: "Agent-first browser capture, automated timeline generation and HyperFrames rendering."
   });
@@ -122,7 +122,7 @@ export function createServer() {
   }, async ({sessionId, key}) => { await keypress(sessionId, key); return result({ok:true}); });
 
   server.registerTool("browser_goto", {
-    description: "Navigate the recorded browser to a URL. Only http/https, and only to a host in DEMOMOTION_ALLOWED_HOSTS (default: localhost, 127.0.0.1, ::1 — every port). A URL off the allowlist fails BY DESIGN with a message naming the host and the variable; redirects, links, fetches and WebSockets to hosts off the allowlist are blocked at the network layer and listed in session_status as blockedRequests. Do not work around it: ask the operator to extend the allowlist.",
+    description: "Navigate the recorded browser to a URL. Only http/https, and only to a host in AUTODEMO_ALLOWED_HOSTS (default: localhost, 127.0.0.1, ::1 — every port). A URL off the allowlist fails BY DESIGN with a message naming the host and the variable; redirects, links, fetches and WebSockets to hosts off the allowlist are blocked at the network layer and listed in session_status as blockedRequests. Do not work around it: ask the operator to extend the allowlist.",
     inputSchema: z.object({ sessionId: z.string(), url: z.url() })
   }, async ({sessionId, url}) => {
     await goto(sessionId, url);
@@ -182,7 +182,7 @@ export function createServer() {
   }, async ({sessionId}) => result(await stopSession(sessionId)));
 
   server.registerTool("project_build", {
-    description: "Convert a capture manifest into a DemoMotion project and generate automatic zoom regions from interactions.",
+    description: "Convert a capture manifest into a AutoDemo project and generate automatic zoom regions from interactions.",
     inputSchema: z.object({
       captureManifestPath: z.string(),
       title: z.string().min(1).default("Product Demo")
@@ -227,7 +227,7 @@ export function createServer() {
   });
 
   server.registerTool("render_video", {
-    description: "Render a DemoMotion project to MP4 using the HyperFrames compositor.",
+    description: "Render a AutoDemo project to MP4 using the HyperFrames compositor.",
     inputSchema: z.object({
       projectPath: z.string(),
       outputPath: z.string().optional()

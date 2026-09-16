@@ -1,18 +1,12 @@
 <div align="center">
 
 <pre>
- ██████╗ ███████╗███╗   ███╗ ██████╗
- ██╔══██╗██╔════╝████╗ ████║██╔═══██╗
- ██║  ██║█████╗  ██╔████╔██║██║   ██║
- ██║  ██║██╔══╝  ██║╚██╔╝██║██║   ██║
- ██████╔╝███████╗██║ ╚═╝ ██║╚██████╔╝
- ╚═════╝ ╚══════╝╚═╝     ╚═╝ ╚═════╝
- ███╗   ███╗ ██████╗ ████████╗██╗ ██████╗ ███╗   ██╗
- ████╗ ████║██╔═══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║
- ██╔████╔██║██║   ██║   ██║   ██║██║   ██║██╔██╗ ██║
- ██║╚██╔╝██║██║   ██║   ██║   ██║██║   ██║██║╚██╗██║
- ██║ ╚═╝ ██║╚██████╔╝   ██║   ██║╚██████╔╝██║ ╚████║
- ╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+  █████╗ ██╗   ██╗████████╗ ██████╗ ██████╗ ███████╗███╗   ███╗ ██████╗
+ ██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝████╗ ████║██╔═══██╗
+ ███████║██║   ██║   ██║   ██║   ██║██║  ██║█████╗  ██╔████╔██║██║   ██║
+ ██╔══██║██║   ██║   ██║   ██║   ██║██║  ██║██╔══╝  ██║╚██╔╝██║██║   ██║
+ ██║  ██║╚██████╔╝   ██║   ╚██████╔╝██████╔╝███████╗██║ ╚═╝ ██║╚██████╔╝
+ ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═════╝ ╚══════╝╚═╝     ╚═╝ ╚═════╝
 </pre>
 
 ### The AI agent makes the demo video. All of it.
@@ -26,7 +20,7 @@
 
 <br>
 
-![DemoMotion generating a product demo](./docs/assets/demo.gif)
+![AutoDemo generating a product demo](./docs/assets/demo.gif)
 
 <sub><b>This clip was not edited by a human.</b> An agent opened the app, scrolled it, filled the signup form, submitted it, and the pipeline produced the zooms, the cursor, the captions and the cuts. <a href="./docs/assets/demo.mp4">Full quality MP4</a> · <a href="./fixtures/showcase-app">the app in the clip</a> ships with the repo, so you can reproduce this.</sub>
 
@@ -34,7 +28,7 @@
 
 ---
 
-DemoMotion is a **Model Context Protocol (MCP) server** that turns an AI agent into a motion designer. The agent drives your web app, records the session as a frame-indexed timeline, decides where to zoom, cuts the dead time, and renders a polished product-demo video — programmatically. There is no timeline to drag and no human in the edit.
+AutoDemo is a **Model Context Protocol (MCP) server** that turns an AI agent into a motion designer. The agent drives your web app, records the session as a frame-indexed timeline, decides where to zoom, cuts the dead time, and renders a polished product-demo video — programmatically. There is no timeline to drag and no human in the edit.
 
 It exists to collapse this:
 
@@ -52,11 +46,11 @@ into this:
 
 ## Why this is not just another screen recorder
 
-Loom, Screen Studio and Recordly are built for a **human** to record and edit. DemoMotion is built for an **agent** to operate the product and author the edit as data. The difference is who is driving — and that everything the agent decides is structured, inspectable, and reproducible.
+Loom, Screen Studio and Recordly are built for a **human** to record and edit. AutoDemo is built for an **agent** to operate the product and author the edit as data. The difference is who is driving — and that everything the agent decides is structured, inspectable, and reproducible.
 
 The core principle: **capture what happened once; decide how it should look later.** The raw recording and the interaction events are the source of truth. Every creative choice — zoom, framing, cuts, speed, callouts — lives in a `project.json` the agent edits and re-renders, never baked into the pixels.
 
-|                       | Loom · Screen Studio · Recordly | **DemoMotion**                     |
+|                       | Loom · Screen Studio · Recordly | **AutoDemo**                       |
 | --------------------- | ------------------------------- | ---------------------------------- |
 | Who operates the app  | a human                         | **the AI agent**                   |
 | Who makes the edit    | a human, in a UI                | **the agent, as `project.json`**   |
@@ -71,7 +65,7 @@ The core principle: **capture what happened once; decide how it should look late
  prompt
    │
    ▼
- AI agent ──(MCP tools)──► DemoMotion server
+ AI agent ──(MCP tools)──► AutoDemo server
                                │
         ┌──────────────────────┼───────────────────────┐
         ▼                      ▼                        ▼
@@ -105,35 +99,35 @@ Pick your client. Everything below was run on the machine that wrote it unless t
 <summary><b>Claude Code</b> — one command, no file to edit</summary>
 
 ```bash
-claude mcp add demomotion \
-  -e DEMOMOTION_BROWSER_CHANNEL=chrome \
-  -e DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 \
-  -- npx -y demomotion
+claude mcp add autodemo \
+  -e AUTODEMO_BROWSER_CHANNEL=chrome \
+  -e AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -- npx -y autodemo
 ```
 
-Confirm with `claude mcp list` — it should print `demomotion: npx -y demomotion - ✔ Connected`.
+Confirm with `claude mcp list` — it should print `autodemo: npx -y autodemo - ✔ Connected`.
 </details>
 
 <details>
 <summary><b>Codex CLI</b> — TOML, not JSON</summary>
 
 ```bash
-codex mcp add demomotion \
-  --env DEMOMOTION_BROWSER_CHANNEL=chrome \
-  --env DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 \
-  -- npx -y demomotion
+codex mcp add autodemo \
+  --env AUTODEMO_BROWSER_CHANNEL=chrome \
+  --env AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -- npx -y autodemo
 ```
 
 Or by hand in `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.demomotion]
+[mcp_servers.autodemo]
 command = "npx"
-args = ["-y", "demomotion"]
+args = ["-y", "autodemo"]
 
-[mcp_servers.demomotion.env]
-DEMOMOTION_BROWSER_CHANNEL = "chrome"
-DEMOMOTION_ALLOWED_HOSTS = "localhost,127.0.0.1"
+[mcp_servers.autodemo.env]
+AUTODEMO_BROWSER_CHANNEL = "chrome"
+AUTODEMO_ALLOWED_HOSTS = "localhost,127.0.0.1"
 ```
 
 `codex mcp list` shows `Status: enabled` and masks env values — that is config state, not a health check.
@@ -143,10 +137,10 @@ DEMOMOTION_ALLOWED_HOSTS = "localhost,127.0.0.1"
 <summary><b>Gemini CLI</b> — note: no <code>--</code> separator</summary>
 
 ```bash
-gemini mcp add -s user demomotion \
-  -e DEMOMOTION_BROWSER_CHANNEL=chrome \
-  -e DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 \
-  npx -y demomotion
+gemini mcp add -s user autodemo \
+  -e AUTODEMO_BROWSER_CHANNEL=chrome \
+  -e AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  npx -y autodemo
 ```
 
 Writes `mcpServers` into `~/.gemini/settings.json`. On some hosts `gemini mcp list` reports `Disconnected` for every server, including known-good ones — treat that column as unreliable rather than as a verdict on this server.
@@ -160,12 +154,12 @@ All take the identical block, only the file differs:
 ```json
 {
   "mcpServers": {
-    "demomotion": {
+    "autodemo": {
       "command": "npx",
-      "args": ["-y", "demomotion"],
+      "args": ["-y", "autodemo"],
       "env": {
-        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+        "AUTODEMO_BROWSER_CHANNEL": "chrome",
+        "AUTODEMO_ALLOWED_HOSTS": "localhost,127.0.0.1"
       }
     }
   }
@@ -194,13 +188,13 @@ Claude Desktop's config usually has no `mcpServers` key yet — add it as a new 
 ```json
 {
   "servers": {
-    "demomotion": {
+    "autodemo": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "demomotion"],
+      "args": ["-y", "autodemo"],
       "env": {
-        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+        "AUTODEMO_BROWSER_CHANNEL": "chrome",
+        "AUTODEMO_ALLOWED_HOSTS": "localhost,127.0.0.1"
       }
     }
   }
@@ -213,20 +207,20 @@ Copying an `mcpServers` example here silently does nothing. *Read from VS Code's
 <details>
 <summary><b>Zed</b>, or any other MCP client</summary>
 
-Zed changes its settings key between releases, so rather than print one that may be wrong: Agent Panel → **Add Custom Server**, and enter command `npx`, args `-y demomotion`, plus the two env vars.
+Zed changes its settings key between releases, so rather than print one that may be wrong: Agent Panel → **Add Custom Server**, and enter command `npx`, args `-y autodemo`, plus the two env vars.
 
 Any stdio MCP client works the same way. To check the server by hand:
 
 ```bash
-printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}\n' | npx -y demomotion
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}\n' | npx -y autodemo
 ```
 
 The first line of stdout must start with `{`.
 </details>
 
-**The two env vars matter.** `DEMOMOTION_ALLOWED_HOSTS` is a strict allowlist that defaults to `localhost, 127.0.0.1, ::1` — to record any other host, add it there or the server refuses by design. `DEMOMOTION_BROWSER_CHANNEL=chrome` drives an installed browser, and is required on hosts where Playwright ships no bundled Chromium (macOS 13, for one).
+**The two env vars matter.** `AUTODEMO_ALLOWED_HOSTS` is a strict allowlist that defaults to `localhost, 127.0.0.1, ::1` — to record any other host, add it there or the server refuses by design. `AUTODEMO_BROWSER_CHANNEL=chrome` drives an installed browser, and is required on hosts where Playwright ships no bundled Chromium (macOS 13, for one).
 
-The first run downloads ~400 MB, dominated by the renderer's `onnxruntime-node`. Sessions, captures and renders land under `~/.demomotion/sessions/` (`DEMOMOTION_HOME` overrides); every tool result returns absolute paths.
+The first run downloads ~400 MB, dominated by the renderer's `onnxruntime-node`. Sessions, captures and renders land under `~/.autodemo/sessions/` (`AUTODEMO_HOME` overrides); every tool result returns absolute paths.
 
 ### Your first video
 
@@ -252,11 +246,11 @@ Then one call:
 
 Pass `"pacing": "social"` and the same steps come out 1080×1920. A step that fails returns `isError` naming the step index, the selector and the cause — with the capture recorded so far kept, and no browser left running.
 
-Editing needs no re-recording: `project_update` the project, then `render_video` again. `demomotion render project.json --out demo.mp4` does it from the shell.
+Editing needs no re-recording: `project_update` the project, then `render_video` again. `autodemo render project.json --out demo.mp4` does it from the shell.
 
 New here? **[docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md)** walks the whole path per client. When something breaks, **[docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md)** has the real error text and the fix.
 
-Contributors: `pnpm install && pnpm --filter demomotion exec playwright install chromium && pnpm typecheck && pnpm test && pnpm build`; `pnpm dev:mcp` runs the server from source.
+Contributors: `pnpm install && pnpm --filter autodemo exec playwright install chromium && pnpm typecheck && pnpm test && pnpm build`; `pnpm dev:mcp` runs the server from source.
 
 ## The MCP tool surface
 
@@ -276,11 +270,11 @@ The agent sees granular, auditable tools — not a black box — and `demo_creat
 | `demo_create` | **One call → MP4**: URL + explicit step list + pacing preset; runs the whole pipeline, fails with the step named and the capture kept |
 | `demo_finalize` | Stop → compile → render in one call |
 
-An agent skill in [`skills/demomotion/SKILL.md`](./skills/demomotion/SKILL.md) tells the model *how* to use them: objective analysis, scene planning, capture, editing heuristics, render, validation.
+An agent skill in [`skills/autodemo/SKILL.md`](./skills/autodemo/SKILL.md) tells the model *how* to use them: objective analysis, scene planning, capture, editing heuristics, render, validation.
 
 ## What works today, and what's next
 
-DemoMotion is early and honest about it. Everything below the line is proven by execution in the test suite; everything in **Roadmap** is not built yet.
+AutoDemo is early and honest about it. Everything below the line is proven by execution in the test suite; everything in **Roadmap** is not built yet.
 
 **Working and tested**
 - Deterministic CDP screencast capture on a constant-fps grid (frame↔time exact by construction)
@@ -309,9 +303,9 @@ Every layer above — zoom, cursor, captions, callouts — is anchored to *when 
 ## Determinism, security & telemetry
 
 - **Reproducible renders.** The same `project.json` produces a byte-identical MP4. `project.json` is the single source of truth — nothing travels as an unvalidated CLI variable.
-- **Host allowlist.** Set `DEMOMOTION_ALLOWED_HOSTS` to restrict navigation. Only `http`/`https` are accepted.
+- **Host allowlist.** Set `AUTODEMO_ALLOWED_HOSTS` to restrict navigation. Only `http`/`https` are accepted.
 - **Redaction.** Values sent through `browser_fill` are stripped from `capture.json`. (A target app may still *display* them on screen — use seeded demo data and dedicated accounts.)
-- **No phoning home.** HyperFrames sends anonymous render telemetry to its vendor. Because DemoMotion renders on its users' behalf, it sets `HYPERFRAMES_NO_TELEMETRY=1` in the render process by default. Set the variable yourself (to any value) and DemoMotion keeps your choice.
+- **No phoning home.** HyperFrames sends anonymous render telemetry to its vendor. Because AutoDemo renders on its users' behalf, it sets `HYPERFRAMES_NO_TELEMETRY=1` in the render process by default. Set the variable yourself (to any value) and AutoDemo keeps your choice.
 
 See [`docs/GETTING-STARTED.md`](./docs/GETTING-STARTED.md) for per-client setup, [`docs/TROUBLESHOOTING.md`](./docs/TROUBLESHOOTING.md) for the failures this produces in practice, [`.env.example`](./.env.example) for every supported variable, and [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full design.
 
@@ -322,13 +316,17 @@ apps/mcp-server/     MCP control plane + deterministic capture + render driver
 packages/compositor/ project.json → HyperFrames HTML (pure, no I/O)
 packages/core/       editing heuristics + the sourceMs ⇄ outputMs bridge (EditList)
 packages/schema/     shared project/action schemas (Zod)
-skills/demomotion/   the agent workflow skill
+skills/autodemo/     the agent workflow skill
 ```
 
 ## Contributing
 
 Issues and PRs are welcome. The test discipline is strict on purpose: every behaviour is proven by a test that was seen to fail first, and both halves of a guarantee are asserted (the abuse is rejected **and** the legitimate case still passes). See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
+## Not affiliated
+
+This project is unrelated to [`elderithm/demomotion-ai`](https://github.com/elderithm/demomotion-ai), which used the DemoMotion name first. Ours was written from scratch as an MCP server and was renamed to AutoDemo on 2026-09-16 to avoid the collision.
+
 ## License
 
-DemoMotion source: **MIT**. The HyperFrames compositor on the render path is Apache-2.0. Both are permissive — DemoMotion adds no per-seat cost for the teams that adopt it.
+AutoDemo source: **MIT**. The HyperFrames compositor on the render path is Apache-2.0. Both are permissive — AutoDemo adds no per-seat cost for the teams that adopt it.

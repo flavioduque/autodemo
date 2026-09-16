@@ -5,7 +5,7 @@ import {
   SOURCE_ZERO, OUTPUT_ZERO, ZERO_MS,
   addMs, subMs, spanMs, atSpeed, scaleMs, minOf, maxOf, roundMs,
   captureEnd, outputEnd, frameIndexAt, frameSourceMs
-} from "@demomotion/schema";
+} from "@autodemo/schema";
 
 /**
  * The brands are compile-time only (test/time-brands.test-d.ts is where the

@@ -15,7 +15,7 @@ import { startSession, goto, click, status, stopSession, inspectPage, type Sessi
 // the socket, never as an error message alone.
 //
 // No external network: both servers listen on 127.0.0.1, and the one hostname
-// used (`pinned.demomotion.invalid`) is resolved by an injected resolver —
+// used (`pinned.autodemo.invalid`) is resolved by an injected resolver —
 // `.invalid` is reserved by RFC 6761 precisely so that it can never resolve.
 //
 // Not gated behind an env var, like frames.test.ts: a suite that stays green
@@ -23,8 +23,8 @@ import { startSession, goto, click, status, stopSession, inspectPage, type Sessi
 // a browser, no ffmpeg. On macOS the locally installed Chrome is driven.
 // ---------------------------------------------------------------------------
 
-if (process.platform === "darwin" && !process.env.DEMOMOTION_BROWSER_CHANNEL && !process.env.DEMOMOTION_BROWSER_EXECUTABLE) {
-  process.env.DEMOMOTION_BROWSER_CHANNEL = "chrome";
+if (process.platform === "darwin" && !process.env.AUTODEMO_BROWSER_CHANNEL && !process.env.AUTODEMO_BROWSER_EXECUTABLE) {
+  process.env.AUTODEMO_BROWSER_CHANNEL = "chrome";
 }
 
 interface Hit { url: string; host: string; upgrade?: boolean }
@@ -152,9 +152,9 @@ test("positive: the allowlisted server navigates and records, with zero blocked 
 
 test("session_stop reports zero blocked requests for a clean session", { timeout: 60_000 }, async (t) => {
   // record-video mode: stopSession writes the manifest without ffmpeg (CI has none).
-  const previous = process.env.DEMOMOTION_CAPTURE;
-  process.env.DEMOMOTION_CAPTURE = "record-video";
-  t.after(() => { if (previous === undefined) delete process.env.DEMOMOTION_CAPTURE; else process.env.DEMOMOTION_CAPTURE = previous; });
+  const previous = process.env.AUTODEMO_CAPTURE;
+  process.env.AUTODEMO_CAPTURE = "record-video";
+  t.after(() => { if (previous === undefined) delete process.env.AUTODEMO_CAPTURE; else process.env.AUTODEMO_CAPTURE = previous; });
 
   const a = await serve();
   t.after(() => a.close(), HOOK);
@@ -191,7 +191,7 @@ test("negative: the same server, not allowlisted — goto fails with OUR message
     () => goto(session.id, `${b.origin}/forbidden`),
     (error: Error) => {
       assert.match(error.message, new RegExp(`127\\.0\\.0\\.1:${b.port}`), "names the host and port");
-      assert.match(error.message, /DEMOMOTION_ALLOWED_HOSTS/, "names the variable to set");
+      assert.match(error.message, /AUTODEMO_ALLOWED_HOSTS/, "names the variable to set");
       assert.doesNotMatch(error.message, /net::ERR_/, "not Playwright's generic error");
       return true;
     }
@@ -211,22 +211,22 @@ test("the env var is what configures the policy when nothing is injected", { tim
   const a = await serve(pagesPointingAt(b));
   t.after(async () => { await a.close(); await b.close(); }, HOOK);
 
-  const previous = process.env.DEMOMOTION_ALLOWED_HOSTS;
-  process.env.DEMOMOTION_ALLOWED_HOSTS = `127.0.0.1:${a.port}`;
-  t.after(() => { if (previous === undefined) delete process.env.DEMOMOTION_ALLOWED_HOSTS; else process.env.DEMOMOTION_ALLOWED_HOSTS = previous; });
+  const previous = process.env.AUTODEMO_ALLOWED_HOSTS;
+  process.env.AUTODEMO_ALLOWED_HOSTS = `127.0.0.1:${a.port}`;
+  t.after(() => { if (previous === undefined) delete process.env.AUTODEMO_ALLOWED_HOSTS; else process.env.AUTODEMO_ALLOWED_HOSTS = previous; });
 
   const session = await open(t, undefined);
   await goto(session.id, `${a.origin}/plain`);
-  await assert.rejects(() => goto(session.id, `${b.origin}/x`), /DEMOMOTION_ALLOWED_HOSTS/);
+  await assert.rejects(() => goto(session.id, `${b.origin}/x`), /AUTODEMO_ALLOWED_HOSTS/);
   assert.equal(b.hits.length, 0);
 });
 
 test("default: variable unset — 127.0.0.1 works and a metadata address is refused before any socket", { timeout: 60_000 }, async (t) => {
   const a = await serve();
   t.after(() => a.close(), HOOK);
-  const previous = process.env.DEMOMOTION_ALLOWED_HOSTS;
-  delete process.env.DEMOMOTION_ALLOWED_HOSTS;
-  t.after(() => { if (previous !== undefined) process.env.DEMOMOTION_ALLOWED_HOSTS = previous; });
+  const previous = process.env.AUTODEMO_ALLOWED_HOSTS;
+  delete process.env.AUTODEMO_ALLOWED_HOSTS;
+  t.after(() => { if (previous !== undefined) process.env.AUTODEMO_ALLOWED_HOSTS = previous; });
 
   const session = await open(t, undefined);
   assert.equal(status(session.id).allowedHosts, "localhost, 127.0.0.1, ::1");
@@ -239,7 +239,7 @@ test("default: variable unset — 127.0.0.1 works and a metadata address is refu
   // no request exists for the http guard to see — the only record is ours.
   await assert.rejects(
     () => goto(session.id, "http://169.254.169.254/latest/meta-data/"),
-    (error: Error) => { assert.match(error.message, /169\.254\.169\.254/); assert.match(error.message, /DEMOMOTION_ALLOWED_HOSTS/); return true; }
+    (error: Error) => { assert.match(error.message, /169\.254\.169\.254/); assert.match(error.message, /AUTODEMO_ALLOWED_HOSTS/); return true; }
   );
   const blocked = status(session.id).blockedRequests;
   assert.equal(blocked.length, 1);
@@ -258,7 +258,7 @@ test("redirect: an allowlisted page answering 302 to the forbidden server — ze
     () => goto(session.id, `${a.origin}/redirect`),
     (error: Error) => {
       assert.match(error.message, new RegExp(`127\\.0\\.0\\.1:${b.port}`), "names the redirect TARGET");
-      assert.match(error.message, /DEMOMOTION_ALLOWED_HOSTS/);
+      assert.match(error.message, /AUTODEMO_ALLOWED_HOSTS/);
       assert.doesNotMatch(error.message, /net::ERR_/);
       return true;
     }
@@ -294,7 +294,7 @@ test("goto settles on the guard's block, not on Playwright: a page that leaves f
     () => goto(session.id, `${a.origin}/leave-for-b`),
     (error: Error) => {
       assert.match(error.message, new RegExp(`127\\.0\\.0\\.1:${b.port}/from-leave`), "names the URL the page tried to leave for");
-      assert.match(error.message, /DEMOMOTION_ALLOWED_HOSTS/);
+      assert.match(error.message, /AUTODEMO_ALLOWED_HOSTS/);
       return true;
     }
   );
@@ -408,7 +408,7 @@ test("bypass spellings of 127.0.0.1 with the forbidden port are refused; the sam
   // IPv4-mapped IPv6 is NOT folded: it is refused as the literal it is.
   await assert.rejects(
     () => goto(session.id, `http://[::ffff:127.0.0.1]:${b.port}/`),
-    (error: Error) => { assert.match(error.message, /\[::ffff:7f00:1\]/); assert.match(error.message, /DEMOMOTION_ALLOWED_HOSTS/); return true; }
+    (error: Error) => { assert.match(error.message, /\[::ffff:7f00:1\]/); assert.match(error.message, /AUTODEMO_ALLOWED_HOSTS/); return true; }
   );
   await assert.rejects(() => goto(session.id, `http://[::ffff:127.0.0.1]:${a.port}/`), /\[::ffff:7f00:1\]/);
   await settle();
@@ -424,7 +424,7 @@ test("bypass spellings of 127.0.0.1 with the forbidden port are refused; the sam
 test("DNS pin: a listed name is resolved by OUR resolver and Chromium is pinned to that address", { timeout: 60_000 }, async (t) => {
   const a = await serve();
   t.after(() => a.close(), HOOK);
-  const name = "pinned.demomotion.invalid";
+  const name = "pinned.autodemo.invalid";
 
   // Assertion zero: the name has no real binding on this host, so a hit can
   // only come from the pin. `.invalid` never resolves (RFC 6761); an offline
@@ -450,7 +450,7 @@ test("DNS pin: a listed name is resolved by OUR resolver and Chromium is pinned 
   const before = a.hits.length;
   await assert.rejects(
     () => goto(bad.id, `http://${name}:${a.port}/`),
-    (error: Error) => { assert.match(error.message, /169\.254\.169\.254/); assert.match(error.message, /DEMOMOTION_ALLOWED_HOSTS/); return true; }
+    (error: Error) => { assert.match(error.message, /169\.254\.169\.254/); assert.match(error.message, /AUTODEMO_ALLOWED_HOSTS/); return true; }
   );
   assert.equal(a.hits.length, before);
 });

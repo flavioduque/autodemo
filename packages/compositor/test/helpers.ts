@@ -1,5 +1,5 @@
-import type { DemoProject, DemoProjectInput } from "@demomotion/schema";
-import { DemoProjectSchema } from "@demomotion/schema";
+import type { DemoProject, DemoProjectInput } from "@autodemo/schema";
+import { DemoProjectSchema } from "@autodemo/schema";
 
 /**
  * A minimal, valid project. Every field a test cares about is overridden explicitly.
@@ -125,7 +125,7 @@ export type CameraKeyframe = { start: number; end: number; scale: number; x: num
 
 /** The camera track the generator emits, in OUTPUT seconds. */
 export function camera(html: string): CameraKeyframe[] {
-  const m = /<script type="application\/json" id="demomotion-camera">([\s\S]*?)<\/script>/.exec(html);
+  const m = /<script type="application\/json" id="autodemo-camera">([\s\S]*?)<\/script>/.exec(html);
   if (!m) throw new Error("no camera track in generated HTML");
   return JSON.parse(m[1]);
 }
@@ -146,7 +146,7 @@ export async function runtime(html: string) {
   const mod: any = await import("gsap");
   const gsap = mod.gsap ?? mod.default;
 
-  const cameraJson = /<script type="application\/json" id="demomotion-camera">([\s\S]*?)<\/script>/.exec(html);
+  const cameraJson = /<script type="application\/json" id="autodemo-camera">([\s\S]*?)<\/script>/.exec(html);
   if (!cameraJson) throw new Error("no camera track in generated HTML");
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   if (scripts.length !== 1) throw new Error(`expected exactly one runtime script, found ${scripts.length}`);
@@ -194,7 +194,7 @@ export type CaptionTrack = {
 
 /** The caption data island the runtime reads, in OUTPUT seconds. */
 export function captionTrack(html: string): CaptionTrack {
-  const m = /<script type="application\/json" id="demomotion-captions">([\s\S]*?)<\/script>/.exec(html);
+  const m = /<script type="application\/json" id="autodemo-captions">([\s\S]*?)<\/script>/.exec(html);
   if (!m) throw new Error("no caption track in generated HTML");
   return JSON.parse(m[1]);
 }
@@ -217,7 +217,7 @@ export type Transitions = {
 
 /** The transition data island the runtime reads, in OUTPUT seconds. */
 export function transitions(html: string): Transitions {
-  const m = /<script type="application\/json" id="demomotion-transitions">([\s\S]*?)<\/script>/.exec(html);
+  const m = /<script type="application\/json" id="autodemo-transitions">([\s\S]*?)<\/script>/.exec(html);
   if (!m) throw new Error("no transition track in generated HTML");
   return JSON.parse(m[1]);
 }

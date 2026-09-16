@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DemoProjectSchema, outputSize, sourceSize } from "@demomotion/schema";
+import { DemoProjectSchema, outputSize, sourceSize } from "@autodemo/schema";
 import { GOLDEN_INPUT } from "./golden-project.ts";
 
 /**

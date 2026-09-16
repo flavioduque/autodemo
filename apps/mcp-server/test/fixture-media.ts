@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 // referenced by absolute path. `data/` is gitignored, so on a fresh clone the
 // documented command
 //
-//   DEMOMOTION_RENDER_TESTS=1 pnpm --filter @demomotion/mcp-server test
+//   AUTODEMO_RENDER_TESTS=1 pnpm --filter @autodemo/mcp-server test
 //
 // failed on a missing file. This module produces that clip instead, on demand,
 // and caches it under a gitignored path.

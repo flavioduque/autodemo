@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { demoCreateInput, planSteps, runDemoCreate, type DemoCreateDeps } from "../src/demo-create.ts";
 import { PACING_PRESETS } from "../src/pacing.ts";
-import { sourceMs } from "@demomotion/schema";
+import { sourceMs } from "@autodemo/schema";
 
 // demo_create is an ORCHESTRATION of tools that are each proven elsewhere. What
 // is new, and what these tests pin, is (a) the shape it accepts, (b) how a
@@ -254,7 +254,7 @@ test("a fill's value never reaches the error payload", async () => {
 });
 
 test("the opening navigation failing is reported as the open stage, with the policy's own message", async () => {
-  const message = 'DemoMotion refused http://example.com/: "example.com" is not in DEMOMOTION_ALLOWED_HOSTS (currently localhost, 127.0.0.1, ::1).';
+  const message = 'AutoDemo refused http://example.com/: "example.com" is not in AUTODEMO_ALLOWED_HOSTS (currently localhost, 127.0.0.1, ::1).';
   const calls: Call[] = [];
   const { deps } = fakeDeps({ goto: async () => { calls.push(["goto"]); throw new Error(message); } }, calls);
   const outcome = await runDemoCreate(demoCreateInput.parse({ url: "http://example.com/", steps: [{ action: "wait", ms: 100 }] }), deps);

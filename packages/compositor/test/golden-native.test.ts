@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateComposition } from "../src/index.ts";
 import { goldenProject, GOLDEN_INPUT } from "./golden-project.ts";
-import { DemoProjectSchema } from "@demomotion/schema";
+import { DemoProjectSchema } from "@autodemo/schema";
 
 /**
  * THE CONTROL FOR REFRAMING.
@@ -31,7 +31,7 @@ test("a project with no output frame renders byte-for-byte the pre-reframing doc
 
   // Seed check: the golden really has something in it to disagree with.
   assert.ok(GOLDEN.length > 10_000, `the golden file is only ${GOLDEN.length} bytes — it cannot be a whole composition`);
-  assert.ok(/id="demomotion-camera"/.test(GOLDEN) && /<video/.test(GOLDEN));
+  assert.ok(/id="autodemo-camera"/.test(GOLDEN) && /<video/.test(GOLDEN));
 
   assert.equal(html, GOLDEN);
 });

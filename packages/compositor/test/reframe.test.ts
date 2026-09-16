@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { generateComposition } from "../src/index.ts";
 import { project, stageStyle, camStyle, px, runtime, visibleSourceRect, rootAttr } from "./helpers.ts";
-import type { DemoProjectInput } from "@demomotion/schema";
+import type { DemoProjectInput } from "@autodemo/schema";
 
 /**
  * A `social` cut is 9:16. The capture is 16:9. Before this existed, asking for a

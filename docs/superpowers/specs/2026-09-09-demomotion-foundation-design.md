@@ -6,6 +6,8 @@ Escopo: sub-projetos 0 e 1 (fundação verificada + qualidade cinematográfica)
 
 ## 0. O que este documento é — e o que o projeto não tem
 
+> **Nota (2026-09-16):** o projeto foi renomeado de DemoMotion para **AutoDemo** (pacote npm `autodemo`, variáveis `AUTODEMO_*`), porque o nome já estava em uso por outro projeto. Este registro mantém o nome antigo por ser um documento datado; leia "DemoMotion" como "AutoDemo" em todo o texto abaixo.
+
 > **Nota (2026-09-11):** as §0 e §1 descrevem o compositor como Remotion, como estava na data deste registro. A troca pelo HyperFrames — e a remoção de `apps/studio` — está documentada na §9; leia-a antes de tomar o texto abaixo como estado atual.
 
 Este é um documento de **arquitetura de software**: quais módulos existem, quem

@@ -2,12 +2,12 @@
 
 Every entry below is a failure this project actually produces, with the message
 as it is really printed. Where a message is quoted it was captured by running
-the thing on macOS 13.7.8 with `demomotion@0.3.0` from npm; where it was not, the
+the thing on macOS 13.7.8 with `autodemo@0.3.0` from npm; where it was not, the
 entry says so.
 
 Start here: **the server prints one line per problem on stderr at startup**, and
 MCP clients put that in a log. Read it before anything else. On Claude Code:
-`claude mcp get demomotion` shows status; on VS Code, **MCP: List Servers →
+`claude mcp get autodemo` shows status; on VS Code, **MCP: List Servers →
 Show Output**; on Claude Desktop, `~/Library/Logs/Claude/` — `mcp.log` for the
 client side plus one `mcp-server-<name>.log` per server (that layout was
 confirmed on the verification host, which held `mcp.log` and
@@ -26,15 +26,15 @@ output, recorded against `http://example.com/` under the default allowlist):
 
 ```json
 {
-  "error": "demo_create failed at the opening navigation (goto http://example.com/): DemoMotion refused http://example.com/: \"example.com:80\" is not in DEMOMOTION_ALLOWED_HOSTS (currently localhost, 127.0.0.1, ::1 — the default). To allow it, set DEMOMOTION_ALLOWED_HOSTS to include \"example.com:80\" and start a new session.",
+  "error": "demo_create failed at the opening navigation (goto http://example.com/): AutoDemo refused http://example.com/: \"example.com:80\" is not in AUTODEMO_ALLOWED_HOSTS (currently localhost, 127.0.0.1, ::1 — the default). To allow it, set AUTODEMO_ALLOWED_HOSTS to include \"example.com:80\" and start a new session.",
   "stage": "open",
   "step": { "action": "goto", "url": "http://example.com/" },
-  "cause": "DemoMotion refused http://example.com/: \"example.com:80\" is not in DEMOMOTION_ALLOWED_HOSTS (currently localhost, 127.0.0.1, ::1 — the default). To allow it, set DEMOMOTION_ALLOWED_HOSTS to include \"example.com:80\" and start a new session.",
+  "cause": "AutoDemo refused http://example.com/: \"example.com:80\" is not in AUTODEMO_ALLOWED_HOSTS (currently localhost, 127.0.0.1, ::1 — the default). To allow it, set AUTODEMO_ALLOWED_HOSTS to include \"example.com:80\" and start a new session.",
   "sessionId": "74f3976d-…",
   "blockedRequests": [
     { "seq": 1, "url": "http://example.com/", "host": "example.com", "port": 80,
       "kind": "navigation", "reason": "not-listed",
-      "message": "DemoMotion refused http://example.com/: …", "atMs": 0 }
+      "message": "AutoDemo refused http://example.com/: …", "atMs": 0 }
   ],
   "cleanup": "session_stop failed (Screencast produced no frames; capture cannot be assembled.); the browser was destroyed and no capture was written"
 }
@@ -46,7 +46,7 @@ page are missing** — a font, a logo, an analytics widget. Check
 non-empty list means the page reached for something off the allowlist. That
 list is the feature working, not a bug.
 
-**Cause.** `DEMOMOTION_ALLOWED_HOSTS` is a strict allowlist consulted for the
+**Cause.** `AUTODEMO_ALLOWED_HOSTS` is a strict allowlist consulted for the
 first navigation, every redirect, link, `fetch`/XHR, iframe and WebSocket. Unset
 or empty means the default. It is deliberately a *list*, not a pattern.
 
@@ -55,7 +55,7 @@ the client**, because the policy resolves and pins every listed name once, when
 the session starts.
 
 ```
-DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1,::1,staging.example.com,203.0.113.7
+AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1,::1,staging.example.com,203.0.113.7
 ```
 
 Rules that trip people up, all enforced by the policy. The wildcard and scheme
@@ -70,10 +70,10 @@ exercised for this page:
 - **No wildcards.** A wildcard names an open set that cannot be resolved and
   pinned when the session starts, so it is refused. The whole allowlist is
   parsed at `session_start`, not at server startup, so a bad entry surfaces
-  there — real output for `DEMOMOTION_ALLOWED_HOSTS=.example.com`:
+  there — real output for `AUTODEMO_ALLOWED_HOSTS=.example.com`:
 
   ```
-  DEMOMOTION_ALLOWED_HOSTS entry ".example.com" is not valid: wildcards are not supported; list each hostname. Entries are "host" or "host:port" (IPv6 with a port as "[::1]:port"), separated by commas.
+  AUTODEMO_ALLOWED_HOSTS entry ".example.com" is not valid: wildcards are not supported; list each hostname. Entries are "host" or "host:port" (IPv6 with a port as "[::1]:port"), separated by commas.
   ```
 
 - **`host:port` pins one port; a bare `host` allows every port.** IPv6 with a
@@ -82,7 +82,7 @@ exercised for this page:
   launched. Real output of `browser_goto` with a `file:` URL:
 
   ```
-  DemoMotion refused file:///etc/hosts: only http: and https: URLs can be opened (got file:).
+  AutoDemo refused file:///etc/hosts: only http: and https: URLs can be opened (got file:).
   ```
 - **`not-pinned`** means the name resolves inside the allowlist *now* but did
   not when the browser was launched. Start a new session.
@@ -105,7 +105,7 @@ Error: ERROR: Playwright does not support chromium on mac13
 and, at server startup, this warning (real):
 
 ```
-demomotion: warning: no usable capture browser: Playwright's bundled Chromium is not installed (expected at /Users/you/Library/Caches/ms-playwright/chromium-1243/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing); run "npx playwright@1.63.0 install chromium" to install Playwright's Chromium, or set DEMOMOTION_BROWSER_CHANNEL=chrome to drive an installed Google Chrome
+autodemo: warning: no usable capture browser: Playwright's bundled Chromium is not installed (expected at /Users/you/Library/Caches/ms-playwright/chromium-1243/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing); run "npx playwright@1.63.0 install chromium" to install Playwright's Chromium, or set AUTODEMO_BROWSER_CHANNEL=chrome to drive an installed Google Chrome
 ```
 
 **Cause.** Playwright ships no bundled Chromium build for macOS 13. The install
@@ -115,18 +115,18 @@ help.
 **Fix.** Drive a browser you already have:
 
 ```json
-"env": { "DEMOMOTION_BROWSER_CHANNEL": "chrome" }
+"env": { "AUTODEMO_BROWSER_CHANNEL": "chrome" }
 ```
 
-`chrome` and `msedge` are the two channels DemoMotion looks for on macOS, at
+`chrome` and `msedge` are the two channels AutoDemo looks for on macOS, at
 `/Applications/Google Chrome.app/…` and `/Applications/Microsoft Edge.app/…`.
-`DEMOMOTION_BROWSER_EXECUTABLE=/path/to/binary` points at one specific build and
+`AUTODEMO_BROWSER_EXECUTABLE=/path/to/binary` points at one specific build and
 wins over both the channel and the bundled build.
 
 The warning tells you when the channel itself is missing, and where it looked:
 
 ```
-no usable capture browser: DEMOMOTION_BROWSER_CHANNEL is set but browser channel "chrome" was not found (looked in /Applications/Google Chrome.app/Contents/MacOS/Google Chrome); install that browser, run "npx playwright@1.63.0 install chromium" …
+no usable capture browser: AUTODEMO_BROWSER_CHANNEL is set but browser channel "chrome" was not found (looked in /Applications/Google Chrome.app/Contents/MacOS/Google Chrome); install that browser, run "npx playwright@1.63.0 install chromium" …
 ```
 
 ---
@@ -136,13 +136,13 @@ no usable capture browser: DEMOMOTION_BROWSER_CHANNEL is set but browser channel
 **Symptom** — at startup (real output, with `ffmpeg` removed from `PATH`):
 
 ```
-demomotion: warning: ffmpeg and ffprobe not found on PATH: session_stop will fail when it assembles the capture; install ffmpeg (macOS: brew install ffmpeg; Debian/Ubuntu: apt-get install ffmpeg; Windows: winget install ffmpeg) and restart the server
+autodemo: warning: ffmpeg and ffprobe not found on PATH: session_stop will fail when it assembles the capture; install ffmpeg (macOS: brew install ffmpeg; Debian/Ubuntu: apt-get install ffmpeg; Windows: winget install ffmpeg) and restart the server
 ```
 
 and if you push on past the warning, at `session_stop`:
 
 ```
-ffmpeg is not installed or not on PATH; DemoMotion needs ffmpeg and ffprobe to assemble the capture at session_stop. Install ffmpeg (macOS: brew install ffmpeg; Debian/Ubuntu: apt-get install ffmpeg; Windows: winget install ffmpeg) and restart the server.
+ffmpeg is not installed or not on PATH; AutoDemo needs ffmpeg and ffprobe to assemble the capture at session_stop. Install ffmpeg (macOS: brew install ffmpeg; Debian/Ubuntu: apt-get install ffmpeg; Windows: winget install ffmpeg) and restart the server.
 ```
 
 **Cause.** `ffmpeg` is not the renderer — it is what turns the captured frame
@@ -168,7 +168,7 @@ or launch the client from a terminal.
 shows as failed immediately after starting.
 
 **Cause: something other than JSON-RPC was written to stdout.** For a stdio MCP
-server, stdout *is* the protocol. DemoMotion keeps it clean — every
+server, stdout *is* the protocol. AutoDemo keeps it clean — every
 human-readable line, including the preflight warnings, goes to stderr — but a
 wrapper in front of it does not.
 
@@ -178,7 +178,7 @@ stderr discarded so only stdout is left:
 ```
 $ pnpm run fixture 2>/dev/null | head -3
 
-> demomotion-mcp@0.3.0 fixture /Users/you/demomotion-mcp
+> autodemo-mcp@0.3.0 fixture /Users/you/autodemo
 > node fixtures/target-app/server.mjs
 ```
 
@@ -188,7 +188,7 @@ in a `command` and the client's first read is a blank line and a `>` — not JSO
 **Fix.** Give the client the executable directly:
 
 ```json
-{ "command": "npx", "args": ["-y", "demomotion"] }
+{ "command": "npx", "args": ["-y", "autodemo"] }
 ```
 
 Other stdout polluters, same effect: a `console.log` in a Node wrapper script, a
@@ -200,19 +200,19 @@ in it.
 
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
-  | npx -y demomotion
+  | npx -y autodemo
 ```
 
 A healthy server answers on one line (**run**):
 
 ```json
-{"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"demomotion","version":"0.3.0",…}},"jsonrpc":"2.0","id":1}
+{"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"autodemo","version":"0.3.0",…}},"jsonrpc":"2.0","id":1}
 ```
 
-If that works, the fault is in the client's config, not in DemoMotion. Also
+If that works, the fault is in the client's config, not in AutoDemo. Also
 worth knowing: a client's "Disconnected"/"not connected" indicator can be wrong.
 On the verification host, `gemini mcp list` reported `Disconnected` for
-DemoMotion **and** for `@playwright/mcp` used as a control, while both answered
+AutoDemo **and** for `@playwright/mcp` used as a control, while both answered
 the handshake above. Trust the handshake over the status column.
 
 ---
@@ -259,7 +259,7 @@ that matches nothing:
   "cause": "locator.boundingBox: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator('[data-testid=\"does-not-exist\"]').first()\n",
   "sessionId": "e6a8e442-…",
   "blockedRequests": [],
-  "capture": "/Users/you/.demomotion/sessions/e6a8e442-…/capture.json"
+  "capture": "/Users/you/.autodemo/sessions/e6a8e442-…/capture.json"
 }
 ```
 
@@ -316,22 +316,22 @@ because the frame either side is meaningfully different — set
 
 ## The first run is slow, and downloads about 400 MB
 
-**Not a fault.** The first `npx -y demomotion` pulls the package and its
+**Not a fault.** The first `npx -y autodemo` pulls the package and its
 renderer. The bulk is HyperFrames' `onnxruntime-node`, which is a native ML
 runtime and is large by nature. It is a one-time cost per npm cache.
 
-After that, startup is about a second (**run**: `npx -y demomotion --version` →
+After that, startup is about a second (**run**: `npx -y autodemo --version` →
 `real 0m1.058s`).
 
 Some clients time out on the *first* connection for this reason and show the
 server as failed. Warm the cache from a terminal before wiring the client up:
 
 ```bash
-npx -y demomotion --version
+npx -y autodemo --version
 ```
 
 If you would rather not re-resolve through `npx` at all, install it once
-(`npm i -g demomotion`) and give the client `"command": "demomotion"` with
+(`npm i -g autodemo`) and give the client `"command": "autodemo"` with
 `"args": []`.
 
 Rendering itself is not instant either: on the verification host, an 11.2 s clip
@@ -348,11 +348,11 @@ at 1920×1080 took **37.3 s to render** (335 frames), and the whole
 - `browser_screenshot` during a granular session shows what the browser is
   really looking at. Do not push on blindly past a navigation error, an
   unexpected dialog or a missing element.
-- Everything is on disk under `~/.demomotion/sessions/<sessionId>/`
-  (`DEMOMOTION_HOME` moves the root): `capture.json`, `page.mp4`,
+- Everything is on disk under `~/.autodemo/sessions/<sessionId>/`
+  (`AUTODEMO_HOME` moves the root): `capture.json`, `page.mp4`,
   `project.json`, `final.mp4`. A failed run leaves its directory behind on
   purpose.
 - The same `project.json` renders a byte-identical MP4. If two renders differ,
   the project differs.
-- Still stuck: <https://github.com/flavioduque/demomotion/issues>. Include the
+- Still stuck: <https://github.com/flavioduque/autodemo/issues>. Include the
   server's stderr lines, the `isError` body, and `project.json` if there is one.

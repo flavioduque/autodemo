@@ -10,12 +10,12 @@ import { sessionsRoot, startSession, stopSession } from "../src/session-manager.
 // Where sessions land, and what the operator is told at startup.
 // ---------------------------------------------------------------------------
 
-test("sessions land under DEMOMOTION_HOME when it is set, and under ~/.demomotion otherwise", () => {
-  assert.equal(sessionsRoot({ DEMOMOTION_HOME: "/srv/demo" }), path.resolve("/srv/demo/sessions"));
-  assert.equal(sessionsRoot({ DEMOMOTION_HOME: "  " }), path.join(os.homedir(), ".demomotion", "sessions"));
-  assert.equal(sessionsRoot({}), path.join(os.homedir(), ".demomotion", "sessions"));
+test("sessions land under AUTODEMO_HOME when it is set, and under ~/.autodemo otherwise", () => {
+  assert.equal(sessionsRoot({ AUTODEMO_HOME: "/srv/demo" }), path.resolve("/srv/demo/sessions"));
+  assert.equal(sessionsRoot({ AUTODEMO_HOME: "  " }), path.join(os.homedir(), ".autodemo", "sessions"));
+  assert.equal(sessionsRoot({}), path.join(os.homedir(), ".autodemo", "sessions"));
   // Relative homes are anchored on the cwd, so the reported path is absolute.
-  assert.ok(path.isAbsolute(sessionsRoot({ DEMOMOTION_HOME: "rel" })));
+  assert.ok(path.isAbsolute(sessionsRoot({ AUTODEMO_HOME: "rel" })));
 });
 
 test("preflight names both browser fixes when the bundled Chromium is missing and no channel is set", async () => {
@@ -23,7 +23,7 @@ test("preflight names both browser fixes when the bundled Chromium is missing an
   const browser = report.warnings.find((w) => /Chromium/.test(w));
   assert.ok(browser, `no browser warning in ${JSON.stringify(report.warnings)}`);
   assert.match(browser, /npx playwright@1\.63\.0 install chromium/);
-  assert.match(browser, /DEMOMOTION_BROWSER_CHANNEL=chrome/);
+  assert.match(browser, /AUTODEMO_BROWSER_CHANNEL=chrome/);
   // ONE line: an MCP client's log viewer shows stderr line by line.
   assert.equal(browser.includes("\n"), false);
 });
@@ -34,10 +34,10 @@ test("preflight is silent about the browser when the bundled Chromium exists", a
   assert.equal(report.warnings.filter((w) => /Chromium|browser/i.test(w)).length, 0, JSON.stringify(report.warnings));
 });
 
-test("preflight checks the channel binary when DEMOMOTION_BROWSER_CHANNEL is set", async () => {
+test("preflight checks the channel binary when AUTODEMO_BROWSER_CHANNEL is set", async () => {
   // A channel nobody has: the warning names it and the two fixes.
   const missing = await preflight({
-    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_CHANNEL: "chrome" },
+    env: { PATH: process.env.PATH, AUTODEMO_BROWSER_CHANNEL: "chrome" },
     bundledExecutable: "/definitely/not/here",
     channelCandidates: () => ["/definitely/not/here/Chrome"]
   });
@@ -47,22 +47,22 @@ test("preflight checks the channel binary when DEMOMOTION_BROWSER_CHANNEL is set
   // ...and the positive half: a channel that resolves produces no warning even
   // with the bundled build absent, because the channel is what will be used.
   const present = await preflight({
-    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_CHANNEL: "chrome" },
+    env: { PATH: process.env.PATH, AUTODEMO_BROWSER_CHANNEL: "chrome" },
     bundledExecutable: "/definitely/not/here",
     channelCandidates: () => [process.execPath]
   });
   assert.equal(present.warnings.filter((w) => /Chromium|channel/i.test(w)).length, 0, JSON.stringify(present.warnings));
 });
 
-test("preflight checks the binary when DEMOMOTION_BROWSER_EXECUTABLE is set, and it wins over the channel", async () => {
+test("preflight checks the binary when AUTODEMO_BROWSER_EXECUTABLE is set, and it wins over the channel", async () => {
   // The path is what will be launched: a missing one is named, with the fixes.
   const missing = await preflight({
-    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_EXECUTABLE: "/definitely/not/here/chrome-headless-shell", DEMOMOTION_BROWSER_CHANNEL: "chrome" },
+    env: { PATH: process.env.PATH, AUTODEMO_BROWSER_EXECUTABLE: "/definitely/not/here/chrome-headless-shell", AUTODEMO_BROWSER_CHANNEL: "chrome" },
     bundledExecutable: process.execPath,
     channelCandidates: () => [process.execPath]
   });
   assert.equal(missing.browser, "missing");
-  const warning = missing.warnings.find((w) => /DEMOMOTION_BROWSER_EXECUTABLE/.test(w));
+  const warning = missing.warnings.find((w) => /AUTODEMO_BROWSER_EXECUTABLE/.test(w));
   assert.ok(warning, JSON.stringify(missing.warnings));
   assert.match(warning, /^no usable capture browser: /);
   assert.match(warning, /\/definitely\/not\/here\/chrome-headless-shell/);
@@ -71,7 +71,7 @@ test("preflight checks the binary when DEMOMOTION_BROWSER_EXECUTABLE is set, and
   // ...and the positive half: a binary that exists is silent, with neither the
   // bundled build nor the channel present — it is the one thing that will run.
   const present = await preflight({
-    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_EXECUTABLE: process.execPath, DEMOMOTION_BROWSER_CHANNEL: "chrome" },
+    env: { PATH: process.env.PATH, AUTODEMO_BROWSER_EXECUTABLE: process.execPath, AUTODEMO_BROWSER_CHANNEL: "chrome" },
     bundledExecutable: "/definitely/not/here",
     channelCandidates: () => ["/definitely/not/here/Chrome"]
   });
@@ -87,7 +87,7 @@ test("a channel Playwright ships only on OTHER platforms is reported missing, by
   // "unverified" and silence instead of the warning. A channel the table knows
   // on another platform but not on this one is missing here, not unknown.
   const elsewhere = await preflight({
-    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_CHANNEL: "msedge-canary" },
+    env: { PATH: process.env.PATH, AUTODEMO_BROWSER_CHANNEL: "msedge-canary" },
     bundledExecutable: "/definitely/not/here",
     channelCandidates: (_channel, platform) => platform === process.platform ? [] : ["/elsewhere/Microsoft Edge Canary"]
   });
@@ -97,12 +97,12 @@ test("a channel Playwright ships only on OTHER platforms is reported missing, by
   assert.match(warning, /^no usable capture browser: /);
   assert.match(warning, new RegExp(`not available on ${process.platform}`));
   assert.match(warning, /npx playwright@1\.63\.0 install chromium/);
-  assert.match(warning, /DEMOMOTION_BROWSER_CHANNEL=chrome/);
+  assert.match(warning, /AUTODEMO_BROWSER_CHANNEL=chrome/);
   assert.equal(warning.includes("\n"), false);
   // ...and the other half stands: a channel NO platform's table knows is still
   // "unverified" and silent — preflight is a warning, not a second registry.
   const unknown = await preflight({
-    env: { PATH: process.env.PATH, DEMOMOTION_BROWSER_CHANNEL: "my-fork" },
+    env: { PATH: process.env.PATH, AUTODEMO_BROWSER_CHANNEL: "my-fork" },
     bundledExecutable: "/definitely/not/here",
     channelCandidates: () => []
   });
@@ -122,7 +122,7 @@ test("preflight warns about ffmpeg only when it is really absent from PATH", asy
   // for the render job only), and a control that read the real PATH there
   // would fail for the wrong reason. Preflight looks for the names on PATH, so
   // two executable files are all a PATH needs to have ffmpeg on it.
-  const bin = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-fakeffmpeg-"));
+  const bin = await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-fakeffmpeg-"));
   try {
     for (const name of ["ffmpeg", "ffprobe"]) {
       await fs.writeFile(path.join(bin, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
@@ -149,18 +149,18 @@ test("preflight warns about ffmpeg only when it is really absent from PATH", asy
 // from the bottom of a stack. Drives a real browser, so it takes a few seconds.
 // ---------------------------------------------------------------------------
 
-if (process.platform === "darwin" && !process.env.DEMOMOTION_BROWSER_CHANNEL) {
-  process.env.DEMOMOTION_BROWSER_CHANNEL = "chrome";
+if (process.platform === "darwin" && !process.env.AUTODEMO_BROWSER_CHANNEL) {
+  process.env.AUTODEMO_BROWSER_CHANNEL = "chrome";
 }
 
 test("session_stop fails by name when ffmpeg is not on PATH", { timeout: 60_000 }, async () => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-noffmpeg-"));
-  const previous = { HOME: process.env.DEMOMOTION_HOME, PATH: process.env.PATH };
-  process.env.DEMOMOTION_HOME = home;
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-noffmpeg-"));
+  const previous = { HOME: process.env.AUTODEMO_HOME, PATH: process.env.PATH };
+  process.env.AUTODEMO_HOME = home;
   const session = await startSession({ width: 640, height: 400, headless: true });
   try {
     assert.ok(session.dir.startsWith(await fs.realpath(home)) || session.dir.startsWith(home),
-      `session did not land under DEMOMOTION_HOME: ${session.dir}`);
+      `session did not land under AUTODEMO_HOME: ${session.dir}`);
     // Paint something so the screencast produces frames: the failure must be the encoder's.
     await session.page.setContent("<h1 style=\"font-size:80px\">frames</h1>");
     // Seed first: prove the screencast is LIVE before stopping. Under load a
@@ -180,7 +180,7 @@ test("session_stop fails by name when ffmpeg is not on PATH", { timeout: 60_000 
     });
   } finally {
     process.env.PATH = previous.PATH;
-    if (previous.HOME === undefined) delete process.env.DEMOMOTION_HOME; else process.env.DEMOMOTION_HOME = previous.HOME;
+    if (previous.HOME === undefined) delete process.env.AUTODEMO_HOME; else process.env.AUTODEMO_HOME = previous.HOME;
     await session.browser.close().catch(() => {});
     await fs.rm(home, { recursive: true, force: true });
   }

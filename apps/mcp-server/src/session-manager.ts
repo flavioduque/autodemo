@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { type DemoAction, type SourceTimeMs, type DurationMs, SOURCE_ZERO, ZERO_MS, sourceMs, durationMs, spanMs, maxOf } from "@demomotion/schema";
+import { type DemoAction, type SourceTimeMs, type DurationMs, SOURCE_ZERO, ZERO_MS, sourceMs, durationMs, spanMs, maxOf } from "@autodemo/schema";
 import { ScreencastCapture } from "./capture-adapter.js";
 import { NetworkPolicy, type Decision, type LookupFn } from "./network-policy.js";
 import { PLAYWRIGHT_VERSION } from "./versions.js";
@@ -20,7 +20,7 @@ import { PLAYWRIGHT_VERSION } from "./versions.js";
 type CaptureMode = "screencast" | "record-video";
 
 function captureMode(): CaptureMode {
-  return process.env.DEMOMOTION_CAPTURE === "record-video" ? "record-video" : "screencast";
+  return process.env.AUTODEMO_CAPTURE === "record-video" ? "record-video" : "screencast";
 }
 
 /** How a request was stopped, and what it was. Reported by `session_status` and `session_stop`. */
@@ -77,8 +77,8 @@ type BlockListener = (record: BlockedRequest, documentFrameId: string | undefine
 const sessions = new Map<string, Session>();
 
 /**
- * Where sessions are written: `$DEMOMOTION_HOME/sessions`, or
- * `~/.demomotion/sessions` when the variable is unset.
+ * Where sessions are written: `$AUTODEMO_HOME/sessions`, or
+ * `~/.autodemo/sessions` when the variable is unset.
  *
  * Not the cwd. An MCP client launches this server from wherever it likes —
  * Claude Desktop from `/`, an IDE from the user's project — so a cwd-relative
@@ -87,8 +87,8 @@ const sessions = new Map<string, Session>();
  * place, and every tool result carries the absolute path anyway.
  */
 export function sessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.DEMOMOTION_HOME?.trim();
-  return home ? path.resolve(home, "sessions") : path.join(os.homedir(), ".demomotion", "sessions");
+  const home = env.AUTODEMO_HOME?.trim();
+  return home ? path.resolve(home, "sessions") : path.join(os.homedir(), ".autodemo", "sessions");
 }
 
 /**
@@ -109,15 +109,15 @@ function nowSourceMs(s: Session): SourceTimeMs {
  * Launches the capture browser.
  *
  * By default Playwright's bundled Chromium is used so CI stays deterministic.
- * Setting DEMOMOTION_BROWSER_CHANNEL (e.g. "chrome" or "msedge") makes Playwright
+ * Setting AUTODEMO_BROWSER_CHANNEL (e.g. "chrome" or "msedge") makes Playwright
  * drive a locally installed browser instead — useful on hosts where the bundled
- * Chromium build is unavailable. DEMOMOTION_BROWSER_EXECUTABLE names one
+ * Chromium build is unavailable. AUTODEMO_BROWSER_EXECUTABLE names one
  * specific binary and wins over both: it is how the suite is run against the
  * `chrome-headless-shell` CI drives, on a host where it is not a channel.
  */
 async function launchBrowser(headless: boolean, args: string[]): Promise<Browser> {
-  const channel = process.env.DEMOMOTION_BROWSER_CHANNEL?.trim() || undefined;
-  const executablePath = process.env.DEMOMOTION_BROWSER_EXECUTABLE?.trim() || undefined;
+  const channel = process.env.AUTODEMO_BROWSER_CHANNEL?.trim() || undefined;
+  const executablePath = process.env.AUTODEMO_BROWSER_EXECUTABLE?.trim() || undefined;
   try {
     return await chromium.launch({
       headless,
@@ -133,8 +133,8 @@ async function launchBrowser(headless: boolean, args: string[]): Promise<Browser
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     const hint = channel
-      ? `Browser channel "${channel}" could not be launched; install that browser or unset DEMOMOTION_BROWSER_CHANNEL to fall back to the bundled Chromium.`
-      : `Failed to launch Playwright's bundled Chromium; if it is missing or unsupported on this host, run "npx playwright@${PLAYWRIGHT_VERSION} install chromium" or set DEMOMOTION_BROWSER_CHANNEL=chrome to drive the locally installed Google Chrome instead.`;
+      ? `Browser channel "${channel}" could not be launched; install that browser or unset AUTODEMO_BROWSER_CHANNEL to fall back to the bundled Chromium.`
+      : `Failed to launch Playwright's bundled Chromium; if it is missing or unsupported on this host, run "npx playwright@${PLAYWRIGHT_VERSION} install chromium" or set AUTODEMO_BROWSER_CHANNEL=chrome to drive the locally installed Google Chrome instead.`;
     throw new Error(`${hint}\n\nOriginal launch error: ${detail}`, { cause: error });
   }
 }
@@ -220,7 +220,7 @@ async function installWebSocketGuard(s: Session) {
       return;
     }
     recordBlock(s, { ...decision, url: ws.url() }, "websocket");
-    ws.close({ code: 1008, reason: "blocked by DemoMotion network policy" });
+    ws.close({ code: 1008, reason: "blocked by AutoDemo network policy" });
   });
 }
 
@@ -309,7 +309,7 @@ export async function startSession(opts: {
   deviceScaleFactor?: number;
   /**
    * Overrides for the network allowlist. Absent, the policy is read from
-   * `DEMOMOTION_ALLOWED_HOSTS` and names are resolved with `dns.lookup`.
+   * `AUTODEMO_ALLOWED_HOSTS` and names are resolved with `dns.lookup`.
    * Tests inject both so they never touch the network.
    */
   network?: { allowedHosts?: string; lookup?: LookupFn };
@@ -333,14 +333,14 @@ export async function startSession(opts: {
   await fs.mkdir(dir, { recursive: true });
 
   const mode = captureMode();
-  const fps = opts.fps ?? (Number(process.env.DEMOMOTION_FPS) || 30);
+  const fps = opts.fps ?? (Number(process.env.AUTODEMO_FPS) || 30);
   const deviceScaleFactor =
-    opts.deviceScaleFactor ?? (Number(process.env.DEMOMOTION_DSF) || 1);
+    opts.deviceScaleFactor ?? (Number(process.env.AUTODEMO_DSF) || 1);
 
   // The policy is fixed BEFORE the browser exists: its listed names are
   // resolved now, once, and the browser is launched pinned to those answers.
   const policy = new NetworkPolicy({
-    allowedHosts: opts.network?.allowedHosts ?? process.env.DEMOMOTION_ALLOWED_HOSTS,
+    allowedHosts: opts.network?.allowedHosts ?? process.env.AUTODEMO_ALLOWED_HOSTS,
     lookup: opts.network?.lookup
   });
   await policy.prepare();
@@ -586,7 +586,7 @@ function framesInResolutionOrder(page: Page): Frame[] {
 }
 
 /** How long a selector may stay unfound anywhere before the main frame takes over. */
-const FRAME_RESOLVE_TIMEOUT_MS = Number(process.env.DEMOMOTION_FRAME_RESOLVE_TIMEOUT_MS) || 5_000;
+const FRAME_RESOLVE_TIMEOUT_MS = Number(process.env.AUTODEMO_FRAME_RESOLVE_TIMEOUT_MS) || 5_000;
 const FRAME_RESOLVE_POLL_MS = 100;
 
 /**

@@ -3,6 +3,8 @@
 Spec: `docs/superpowers/specs/2026-09-09-demomotion-foundation-design.md`
 Branch: `feat/fundacao-verificada`
 
+> **Nota (2026-09-16):** o projeto foi renomeado de DemoMotion para **AutoDemo** (pacote npm `autodemo`, variáveis `AUTODEMO_*`), porque o nome já estava em uso por outro projeto. Este registro mantém o nome antigo por ser um documento datado; leia "DemoMotion" como "AutoDemo" em todo o texto abaixo.
+
 ## Regra de execução
 
 Cada fase segue o ciclo do projeto: escrever o teste, **vê-lo falhar**, corrigir

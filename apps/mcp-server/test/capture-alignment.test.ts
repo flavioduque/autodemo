@@ -22,19 +22,19 @@ import {
 //     fps (30), so `round(sourceMs/1000*fps)` lands on the wrong frame, and the
 //     error GROWS with time (the ~2.1s-at-10s defect).
 //
-// Gated behind DEMOMOTION_SLOW=1 (launches Chrome + ffmpeg). On this macOS 13
+// Gated behind AUTODEMO_SLOW=1 (launches Chrome + ffmpeg). On this macOS 13
 // host the bundled Chromium cannot install, so it defaults the channel to
 // Google Chrome. Run:
-//   DEMOMOTION_SLOW=1 DEMOMOTION_BROWSER_CHANNEL=chrome \
+//   AUTODEMO_SLOW=1 AUTODEMO_BROWSER_CHANNEL=chrome \
 //     node --import <tsx-loader> --test apps/mcp-server/test/capture-alignment.test.ts
 // ---------------------------------------------------------------------------
 
-const SLOW = process.env.DEMOMOTION_SLOW === "1";
+const SLOW = process.env.AUTODEMO_SLOW === "1";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(HERE, "../../../fixtures/target-app");
 
-if (process.platform === "darwin" && !process.env.DEMOMOTION_BROWSER_CHANNEL) {
-  process.env.DEMOMOTION_BROWSER_CHANNEL = "chrome";
+if (process.platform === "darwin" && !process.env.AUTODEMO_BROWSER_CHANNEL) {
+  process.env.AUTODEMO_BROWSER_CHANNEL = "chrome";
 }
 
 function serveFixture(): Promise<{ port: number; close: () => Promise<void> }> {
@@ -92,8 +92,8 @@ function ffprobeRates(video: string): { r: string; avg: string; nbFrames: number
 
 /** Drive one capture; flip the whole viewport magenta at a recorded source time. */
 async function runFlipCapture(mode: "screencast" | "record-video", port: number) {
-  if (mode === "record-video") process.env.DEMOMOTION_CAPTURE = "record-video";
-  else delete process.env.DEMOMOTION_CAPTURE;
+  if (mode === "record-video") process.env.AUTODEMO_CAPTURE = "record-video";
+  else delete process.env.AUTODEMO_CAPTURE;
 
   const s = await startSession({ width: 1000, height: 600, headless: true });
   let flipAtMs = 0;
@@ -101,7 +101,7 @@ async function runFlipCapture(mode: "screencast" | "record-video", port: number)
     await goto(s.id, `http://127.0.0.1:${port}/`);
     // Settle past the screencast startup transient, then push the flip well into
     // the timeline so the legacy fps drift has room to show (it grows with time).
-    await wait(s.id, Number(process.env.DEMOMOTION_TEST_SETTLE_MS ?? 3600));
+    await wait(s.id, Number(process.env.AUTODEMO_TEST_SETTLE_MS ?? 3600));
     flipAtMs = captureTimeMs(s.id);
     await getSession(s.id).page.evaluate(() => {
       const d = document.createElement("div");

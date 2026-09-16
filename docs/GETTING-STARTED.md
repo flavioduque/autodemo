@@ -12,7 +12,7 @@ far it was proven:
 | **unverified** | from the client's published documentation only — nobody ran it for this page |
 
 The verification host was macOS 13.7.8 (x64), Node 26.8.1, ffmpeg 7.1.1,
-`demomotion@0.3.0` from npm via `npx`.
+`autodemo@0.3.0` from npm via `npx`.
 
 ---
 
@@ -40,10 +40,10 @@ into the source video. Install with `brew install ffmpeg` (macOS),
 npx playwright@1.63.0 install chromium      # Playwright's bundled build
 ```
 
-or point DemoMotion at a browser you already have:
+or point AutoDemo at a browser you already have:
 
 ```bash
-export DEMOMOTION_BROWSER_CHANNEL=chrome    # or msedge
+export AUTODEMO_BROWSER_CHANNEL=chrome    # or msedge
 ```
 
 On **macOS 13** the first option does not exist. Playwright answers, verbatim
@@ -55,7 +55,7 @@ Error: ERROR: Playwright does not support chromium on mac13
 ```
 
 So on macOS 13 — and on any host where the bundled build is missing —
-`DEMOMOTION_BROWSER_CHANNEL=chrome` is not optional. Every snippet below already
+`AUTODEMO_BROWSER_CHANNEL=chrome` is not optional. Every snippet below already
 sets it.
 
 **Check what the server itself thinks.** Running the server by hand prints one
@@ -63,9 +63,9 @@ line per problem on stderr and then waits for a client on stdin. Press Ctrl-C to
 leave. **run**, on a host with neither the bundled Chromium nor ffmpeg on PATH:
 
 ```
-DemoMotion MCP 0.3.0 running on stdio; sessions are written under /Users/you/.demomotion/sessions
-demomotion: warning: no usable capture browser: Playwright's bundled Chromium is not installed (expected at …/chromium-1243/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing); run "npx playwright@1.63.0 install chromium" to install Playwright's Chromium, or set DEMOMOTION_BROWSER_CHANNEL=chrome to drive an installed Google Chrome
-demomotion: warning: ffmpeg and ffprobe not found on PATH: session_stop will fail when it assembles the capture; install ffmpeg (macOS: brew install ffmpeg; Debian/Ubuntu: apt-get install ffmpeg; Windows: winget install ffmpeg) and restart the server
+AutoDemo MCP 0.3.0 running on stdio; sessions are written under /Users/you/.autodemo/sessions
+autodemo: warning: no usable capture browser: Playwright's bundled Chromium is not installed (expected at …/chromium-1243/chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing); run "npx playwright@1.63.0 install chromium" to install Playwright's Chromium, or set AUTODEMO_BROWSER_CHANNEL=chrome to drive an installed Google Chrome
+autodemo: warning: ffmpeg and ffprobe not found on PATH: session_stop will fail when it assembles the capture; install ffmpeg (macOS: brew install ffmpeg; Debian/Ubuntu: apt-get install ffmpeg; Windows: winget install ffmpeg) and restart the server
 ```
 
 No warnings means both are satisfied.
@@ -74,8 +74,8 @@ No warnings means both are satisfied.
 
 | Variable | Why |
 |---|---|
-| `DEMOMOTION_BROWSER_CHANNEL=chrome` | drives an installed Google Chrome instead of Playwright's bundled Chromium. Required on macOS 13; harmless everywhere else. |
-| `DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1` | where the recorded browser may send bytes. **The default is already closed** (`localhost,127.0.0.1,::1`) — set this only to widen it to a staging host. |
+| `AUTODEMO_BROWSER_CHANNEL=chrome` | drives an installed Google Chrome instead of Playwright's bundled Chromium. Required on macOS 13; harmless everywhere else. |
+| `AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1` | where the recorded browser may send bytes. **The default is already closed** (`localhost,127.0.0.1,::1`) — set this only to widen it to a staging host. |
 
 The allowlist is an allowlist, not a blocklist: the first navigation, every
 redirect, link, `fetch`/XHR, iframe and WebSocket is decided against it. A host
@@ -84,9 +84,9 @@ that is not listed is refused with a message naming the host and the fix — see
 
 ### First run is slow and large
 
-The first `npx -y demomotion` downloads the package and its renderer:
+The first `npx -y autodemo` downloads the package and its renderer:
 **roughly 400 MB**, dominated by HyperFrames' `onnxruntime-node`. That is a
-one-time cost per npm cache. Afterwards `npx -y demomotion --version` answers in
+one-time cost per npm cache. Afterwards `npx -y autodemo --version` answers in
 about a second (**run**: `real 0m1.058s`).
 
 ---
@@ -103,16 +103,16 @@ about a second (**run**: `real 0m1.058s`).
 One command. No file editing.
 
 ```bash
-claude mcp add demomotion \
-  -e DEMOMOTION_BROWSER_CHANNEL=chrome \
-  -e DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 \
-  -- npx -y demomotion
+claude mcp add autodemo \
+  -e AUTODEMO_BROWSER_CHANNEL=chrome \
+  -e AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -- npx -y autodemo
 ```
 
 Real output:
 
 ```
-Added stdio MCP server demomotion with command: npx -y demomotion to local config
+Added stdio MCP server autodemo with command: npx -y autodemo to local config
 File modified: /Users/you/.claude.json [project: /path/to/your/project]
 ```
 
@@ -125,23 +125,23 @@ project.
 server:
 
 ```
-demomotion: npx -y demomotion - ✔ Connected
+autodemo: npx -y autodemo - ✔ Connected
 ```
 
-and `claude mcp get demomotion` shows what it will launch:
+and `claude mcp get autodemo` shows what it will launch:
 
 ```
-demomotion:
+autodemo:
   Scope: Local config (private to you in this project)
   Status: ✔ Connected
   Type: stdio
   Command: npx
-  Args: -y demomotion
+  Args: -y autodemo
   Environment:
-    DEMOMOTION_BROWSER_CHANNEL=chrome
-    DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1
+    AUTODEMO_BROWSER_CHANNEL=chrome
+    AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1
 
-To remove this server, run: claude mcp remove demomotion -s local
+To remove this server, run: claude mcp remove autodemo -s local
 ```
 
 Inside a session, `/mcp` lists the tools.
@@ -153,19 +153,19 @@ Inside a session, `/mcp` lists the tools.
 launching the server. Only valid with stdio servers`.
 
 ```bash
-codex mcp add demomotion \
-  --env DEMOMOTION_BROWSER_CHANNEL=chrome \
-  --env DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 \
-  -- npx -y demomotion
+codex mcp add autodemo \
+  --env AUTODEMO_BROWSER_CHANNEL=chrome \
+  --env AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -- npx -y autodemo
 ```
 
-Real output: `Added global MCP server 'demomotion'.`
+Real output: `Added global MCP server 'autodemo'.`
 
 **Confirm** with `codex mcp list`:
 
 ```
 Name        Command  Args           Env                                                               Cwd  Status   Auth
-demomotion  npx      -y demomotion  DEMOMOTION_ALLOWED_HOSTS=*****, DEMOMOTION_BROWSER_CHANNEL=*****  -    enabled  Unsupported
+autodemo    npx      -y autodemo    AUTODEMO_ALLOWED_HOSTS=*****, AUTODEMO_BROWSER_CHANNEL=*****      -    enabled  Unsupported
 ```
 
 Note the limit of that proof: `enabled` is what the config says, not a
@@ -176,16 +176,16 @@ What it writes to `~/.codex/config.toml` — **read**, the real section, so you 
 also write it by hand:
 
 ```toml
-[mcp_servers.demomotion]
+[mcp_servers.autodemo]
 command = "npx"
-args = ["-y", "demomotion"]
+args = ["-y", "autodemo"]
 
-[mcp_servers.demomotion.env]
-DEMOMOTION_ALLOWED_HOSTS = "localhost,127.0.0.1"
-DEMOMOTION_BROWSER_CHANNEL = "chrome"
+[mcp_servers.autodemo.env]
+AUTODEMO_ALLOWED_HOSTS = "localhost,127.0.0.1"
+AUTODEMO_BROWSER_CHANNEL = "chrome"
 ```
 
-Remove with `codex mcp remove demomotion`.
+Remove with `codex mcp remove autodemo`.
 
 ### Gemini CLI — **run**
 
@@ -194,13 +194,13 @@ Remove with `codex mcp remove demomotion`.
 "project"]`, `-e, --env  Set environment variables (e.g. -e KEY=value)`.
 
 ```bash
-gemini mcp add -s user demomotion \
-  -e DEMOMOTION_BROWSER_CHANNEL=chrome \
-  -e DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1 \
-  npx -y demomotion
+gemini mcp add -s user autodemo \
+  -e AUTODEMO_BROWSER_CHANNEL=chrome \
+  -e AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  npx -y autodemo
 ```
 
-Real output: `MCP server "demomotion" added to user settings. (stdio)`
+Real output: `MCP server "autodemo" added to user settings. (stdio)`
 
 Note there is **no `--` separator** here, unlike Claude Code and Codex: the
 command is a positional argument followed by its args.
@@ -210,27 +210,27 @@ It writes this into `~/.gemini/settings.json` — **read**, verbatim:
 ```json
 {
   "mcpServers": {
-    "demomotion": {
+    "autodemo": {
       "command": "npx",
-      "args": ["-y", "demomotion"],
+      "args": ["-y", "autodemo"],
       "env": {
-        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+        "AUTODEMO_BROWSER_CHANNEL": "chrome",
+        "AUTODEMO_ALLOWED_HOSTS": "localhost,127.0.0.1"
       }
     }
   }
 }
 ```
 
-`gemini mcp list` shows it, and `gemini mcp remove -s user demomotion` takes it
+`gemini mcp list` shows it, and `gemini mcp remove -s user autodemo` takes it
 away (the `-s` matters: `remove` defaults to `project` scope and will report
 `not found in project settings` if you added it with `-s user`).
 
 **A caveat, measured.** On the verification host `gemini mcp list` reported
-`✗ demomotion: npx -y demomotion (stdio) - Disconnected`. Adding
+`✗ autodemo: npx -y autodemo (stdio) - Disconnected`. Adding
 `@playwright/mcp` as a control produced the same `Disconnected` — so that status
-is about the Gemini CLI's health probe on this host, **not** about DemoMotion. A
-direct JSON-RPC handshake to `npx -y demomotion` succeeds and returns the full
+is about the Gemini CLI's health probe on this host, **not** about AutoDemo. A
+direct JSON-RPC handshake to `npx -y autodemo` succeeds and returns the full
 tool list. Confirm inside a Gemini session (the tools appear) rather than
 trusting `mcp list`'s status column.
 
@@ -247,12 +247,12 @@ The real shape, matching the file on the verification host:
 ```json
 {
   "mcpServers": {
-    "demomotion": {
+    "autodemo": {
       "command": "npx",
-      "args": ["-y", "demomotion"],
+      "args": ["-y", "autodemo"],
       "env": {
-        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+        "AUTODEMO_BROWSER_CHANNEL": "chrome",
+        "AUTODEMO_ALLOWED_HOSTS": "localhost,127.0.0.1"
       }
     }
   }
@@ -276,12 +276,12 @@ there**, and leave the rest untouched.
 ```json
 {
   "mcpServers": {
-    "demomotion": {
+    "autodemo": {
       "command": "npx",
-      "args": ["-y", "demomotion"],
+      "args": ["-y", "autodemo"],
       "env": {
-        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+        "AUTODEMO_BROWSER_CHANNEL": "chrome",
+        "AUTODEMO_ALLOWED_HOSTS": "localhost,127.0.0.1"
       }
     }
   }
@@ -289,7 +289,7 @@ there**, and leave the rest untouched.
 ```
 
 **Confirm:** quit Claude Desktop completely and reopen it, then open the
-tools/connectors control in the composer — `demomotion` appears with its tool
+tools/connectors control in the composer — `autodemo` appears with its tool
 list. If you also use Claude Code, `claude mcp add-from-claude-desktop` imports
 servers the other way (Mac and WSL only).
 
@@ -307,12 +307,12 @@ The key is `mcpServers`, and the entries have the same `command` / `args` /
 ```json
 {
   "mcpServers": {
-    "demomotion": {
+    "autodemo": {
       "command": "npx",
-      "args": ["-y", "demomotion"],
+      "args": ["-y", "autodemo"],
       "env": {
-        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+        "AUTODEMO_BROWSER_CHANNEL": "chrome",
+        "AUTODEMO_ALLOWED_HOSTS": "localhost,127.0.0.1"
       }
     }
   }
@@ -343,13 +343,13 @@ installed VS Code 1.131.0 bundle: the MCP JSON schema declares
 ```json
 {
   "servers": {
-    "demomotion": {
+    "autodemo": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "demomotion"],
+      "args": ["-y", "autodemo"],
       "env": {
-        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+        "AUTODEMO_BROWSER_CHANNEL": "chrome",
+        "AUTODEMO_ALLOWED_HOSTS": "localhost,127.0.0.1"
       }
     }
   }
@@ -358,7 +358,7 @@ installed VS Code 1.131.0 bundle: the MCP JSON schema declares
 
 **Confirm:** VS Code shows a "Start"/"Running" code lens above each entry in
 `mcp.json`; in Chat, switch to **Agent** mode and open the tools picker — the
-`demomotion` tools are listed there. The **MCP: List Servers** command shows the
+`autodemo` tools are listed there. The **MCP: List Servers** command shows the
 same thing. Not confirmed by execution for this page: no `mcp.json` existed on
 the verification host and the check needs the GUI.
 
@@ -371,12 +371,12 @@ Windsurf 1.105.0's own strings name its file: `Windsurf configurations
 ```json
 {
   "mcpServers": {
-    "demomotion": {
+    "autodemo": {
       "command": "npx",
-      "args": ["-y", "demomotion"],
+      "args": ["-y", "autodemo"],
       "env": {
-        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+        "AUTODEMO_BROWSER_CHANNEL": "chrome",
+        "AUTODEMO_ALLOWED_HOSTS": "localhost,127.0.0.1"
       }
     }
   }
@@ -384,7 +384,7 @@ Windsurf 1.105.0's own strings name its file: `Windsurf configurations
 ```
 
 **Confirm:** Cascade panel → the plugins/MCP icon → **Refresh**, and
-`demomotion` appears with its tools. Not confirmed by execution: the file did
+`autodemo` appears with its tools. Not confirmed by execution: the file did
 not exist on the verification host (Windsurf was installed but had never been
 given an MCP server) and Windsurf has no CLI to list with.
 
@@ -410,12 +410,12 @@ and changes between versions.
 ```json
 {
   "mcpServers": {
-    "demomotion": {
+    "autodemo": {
       "command": "npx",
-      "args": ["-y", "demomotion"],
+      "args": ["-y", "autodemo"],
       "env": {
-        "DEMOMOTION_BROWSER_CHANNEL": "chrome",
-        "DEMOMOTION_ALLOWED_HOSTS": "localhost,127.0.0.1"
+        "AUTODEMO_BROWSER_CHANNEL": "chrome",
+        "AUTODEMO_ALLOWED_HOSTS": "localhost,127.0.0.1"
       }
     }
   }
@@ -429,18 +429,18 @@ Zed supports MCP ("context servers"), but the key and entry shape in
 the verification host. Rather than print a snippet that might be a version
 behind: open Zed's **Agent Panel → Settings → Add Custom Server**, which writes
 the correct shape for your build, and give it `npx` with the args `-y
-demomotion` and the two environment variables from the top of this page.
+autodemo` and the two environment variables from the top of this page.
 
 ### Any other MCP client — **run** (this is the generic stdio contract)
 
-DemoMotion is a plain stdio MCP server. Whatever the client's file looks like,
+AutoDemo is a plain stdio MCP server. Whatever the client's file looks like,
 what it has to launch is:
 
 ```
 command: npx
-args:    ["-y", "demomotion"]
-env:     DEMOMOTION_BROWSER_CHANNEL=chrome
-         DEMOMOTION_ALLOWED_HOSTS=localhost,127.0.0.1
+args:    ["-y", "autodemo"]
+env:     AUTODEMO_BROWSER_CHANNEL=chrome
+         AUTODEMO_ALLOWED_HOSTS=localhost,127.0.0.1
 ```
 
 You can prove the server works on your machine without any client at all, by
@@ -449,13 +449,13 @@ line:
 
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
-  | npx -y demomotion
+  | npx -y autodemo
 ```
 
 Real answer (**run**):
 
 ```json
-{"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"demomotion","version":"0.3.0","description":"Agent-first browser capture, automated timeline generation and HyperFrames rendering."}},"jsonrpc":"2.0","id":1}
+{"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"autodemo","version":"0.3.0","description":"Agent-first browser capture, automated timeline generation and HyperFrames rendering."}},"jsonrpc":"2.0","id":1}
 ```
 
 If that line comes back, the server is fine and any "not connected" is the
@@ -501,14 +501,14 @@ agent, or let it write the steps itself:
   ] } }
 ```
 
-The real result (**run**, `demomotion@0.3.0` from npm, `headless: true`,
-`DEMOMOTION_BROWSER_CHANNEL=chrome`):
+The real result (**run**, `autodemo@0.3.0` from npm, `headless: true`,
+`AUTODEMO_BROWSER_CHANNEL=chrome`):
 
 ```json
 {
-  "video": "/Users/you/.demomotion/sessions/3e11f91c-ca89-4c91-9b60-cdbd2586a8d4/final.mp4",
-  "project": "/Users/you/.demomotion/sessions/3e11f91c-ca89-4c91-9b60-cdbd2586a8d4/project.json",
-  "capture": "/Users/you/.demomotion/sessions/3e11f91c-ca89-4c91-9b60-cdbd2586a8d4/capture.json",
+  "video": "/Users/you/.autodemo/sessions/3e11f91c-ca89-4c91-9b60-cdbd2586a8d4/final.mp4",
+  "project": "/Users/you/.autodemo/sessions/3e11f91c-ca89-4c91-9b60-cdbd2586a8d4/project.json",
+  "capture": "/Users/you/.autodemo/sessions/3e11f91c-ca89-4c91-9b60-cdbd2586a8d4/capture.json",
   "durationMs": 11159,
   "blockedRequests": [],
   "sessionId": "3e11f91c-ca89-4c91-9b60-cdbd2586a8d4",
@@ -606,7 +606,7 @@ re-render, done — no second capture. Taking the exact project from section 3:
 
 ```json
 { "tool": "project_update", "arguments": {
-  "projectPath": "/Users/you/.demomotion/sessions/3e11f91c-…/project.json",
+  "projectPath": "/Users/you/.autodemo/sessions/3e11f91c-…/project.json",
   "title": "Saltmarsh — vertical cut",
   "output": { "width": 1080, "height": 1920 },
   "style": { "cutTransitionMs": 120, "captionScale": 1.2 }
@@ -617,8 +617,8 @@ then
 
 ```json
 { "tool": "render_video", "arguments": {
-  "projectPath": "/Users/you/.demomotion/sessions/3e11f91c-…/project.json",
-  "outputPath": "/Users/you/.demomotion/sessions/3e11f91c-…/vertical.mp4"
+  "projectPath": "/Users/you/.autodemo/sessions/3e11f91c-…/project.json",
+  "outputPath": "/Users/you/.autodemo/sessions/3e11f91c-…/vertical.mp4"
 } }
 ```
 
@@ -645,7 +645,7 @@ instant fell inside the cut simply does not appear.
 **From the shell**, without an agent (**run**):
 
 ```bash
-npx -y demomotion render ~/.demomotion/sessions/3e11f91c-…/project.json --out vertical.mp4
+npx -y autodemo render ~/.autodemo/sessions/3e11f91c-…/project.json --out vertical.mp4
 ```
 
 It prints the output path and exits 0. On the verification host: `real 0m39.726s`
@@ -655,8 +655,8 @@ for the 11.2 s clip.
 
 ## 7. Where the files land
 
-Everything is written under `~/.demomotion/sessions/<sessionId>/`. Override the
-root with `DEMOMOTION_HOME` (sessions go to `<DEMOMOTION_HOME>/sessions`). The
+Everything is written under `~/.autodemo/sessions/<sessionId>/`. Override the
+root with `AUTODEMO_HOME` (sessions go to `<AUTODEMO_HOME>/sessions`). The
 server prints the root on startup, and every tool result returns absolute paths.
 
 One session directory after the walkthrough above (**run**):
@@ -679,6 +679,6 @@ steps 1–6.
 
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — the failures this project actually produces, with the verbatim message
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — the design
-- [`skills/demomotion/SKILL.md`](../skills/demomotion/SKILL.md) — the agent workflow: objective, scenes, capture, editing heuristics, validation
+- [`skills/autodemo/SKILL.md`](../skills/autodemo/SKILL.md) — the agent workflow: objective, scenes, capture, editing heuristics, validation
 - [`.env.example`](../.env.example) — every supported environment variable
 - [`SECURITY.md`](../SECURITY.md) — the network policy in full

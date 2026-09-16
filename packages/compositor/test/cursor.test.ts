@@ -22,7 +22,7 @@ test("the composition has exactly one cursor layer and one cursor runtime regist
 
   assert.equal((html.match(/id="cursor"/g) ?? []).length, 1, "exactly one cursor pointer layer");
   assert.equal((html.match(/id="cursor-ring"/g) ?? []).length, 1, "exactly one click-pulse ring");
-  assert.equal((html.match(/id="demomotion-cursor"/g) ?? []).length, 1, "exactly one cursor data island");
+  assert.equal((html.match(/id="autodemo-cursor"/g) ?? []).length, 1, "exactly one cursor data island");
   // The pointer is an inline SVG — no external asset, no CDN (HyperFrames blocks fetches).
   assert.ok(/<svg[^>]*id="cursor"/.test(html), "the cursor must be an inline SVG");
   assert.ok(!/Math\.random|Date\.now|new Date/.test(html), "runtime stays deterministic");

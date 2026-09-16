@@ -5,8 +5,8 @@ import { promisify } from "node:util";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DemoProjectSchema } from "@demomotion/schema";
-import { generateComposition } from "@demomotion/compositor";
+import { DemoProjectSchema } from "@autodemo/schema";
+import { generateComposition } from "@autodemo/compositor";
 import { renderCompositionHtml, telemetryEnv, videoSrcName } from "../src/render.ts";
 import { fixtureSourceVideo, DURATION_SEC } from "./fixture-media.ts";
 import { solidBox, describeBox, type ColorMask } from "./solid-box.ts";
@@ -16,15 +16,15 @@ const run = promisify(execFile);
 /**
  * These tests launch Chrome and ffmpeg; each render takes ~30 s. Run them with:
  *
- *   DEMOMOTION_RENDER_TESTS=1 pnpm --filter @demomotion/mcp-server test
+ *   AUTODEMO_RENDER_TESTS=1 pnpm --filter @autodemo/mcp-server test
  *
  * The source clip they composite is BUILT on first use and cached under the
  * gitignored data/test-media/ — see fixture-media.ts. Nothing here depends on an
  * artefact that only exists on one machine, and nothing skips quietly if the
  * clip cannot be built: the run fails saying what is missing.
  */
-const SLOW = process.env.DEMOMOTION_RENDER_TESTS === "1";
-const skip = SLOW ? false : "set DEMOMOTION_RENDER_TESTS=1 to run render-level tests";
+const SLOW = process.env.AUTODEMO_RENDER_TESTS === "1";
+const skip = SLOW ? false : "set AUTODEMO_RENDER_TESTS=1 to run render-level tests";
 const TIMEOUT = 900_000;
 
 /** The media really is shorter than the 10.315 s the projects below declare. */
@@ -56,7 +56,7 @@ function syntheticProject(source: string, over: Record<string, unknown> = {}) {
 }
 
 async function tmpdir() {
-  return fs.mkdtemp(path.join(os.tmpdir(), "demomotion-rendertest-"));
+  return fs.mkdtemp(path.join(os.tmpdir(), "autodemo-rendertest-"));
 }
 
 /** ffmpeg's own black-frame detector, over a time window of the output. */

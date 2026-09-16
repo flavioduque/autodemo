@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { CDPSession, Page } from "playwright";
-import { type SourceTimeMs, type DurationMs, SOURCE_ZERO, sourceMs, durationMs } from "@demomotion/schema";
+import { type SourceTimeMs, type DurationMs, SOURCE_ZERO, sourceMs, durationMs } from "@autodemo/schema";
 
 /**
  * Capture adapter contract (design spec §4).
@@ -105,10 +105,10 @@ export class ScreencastCapture {
     this.dir = dir;
     this.framesDir = path.join(dir, "frames");
     this.fps = fps;
-    this.warmupLagMs = Number(process.env.DEMOMOTION_WARMUP_LAG_MS) || 45;
+    this.warmupLagMs = Number(process.env.AUTODEMO_WARMUP_LAG_MS) || 45;
     // Safety cap: never discard for longer than this, so a page that is genuinely
     // slow (never "catches up") still starts capturing.
-    this.warmDeadlineWall = Date.now() + (Number(process.env.DEMOMOTION_WARMUP_MAX_MS) || 4000);
+    this.warmDeadlineWall = Date.now() + (Number(process.env.AUTODEMO_WARMUP_MAX_MS) || 4000);
   }
 
   static async start(opts: {
@@ -119,7 +119,7 @@ export class ScreencastCapture {
     height: number;
     deviceScaleFactor?: number;
   }): Promise<ScreencastCapture> {
-    const fps = opts.fps ?? (Number(process.env.DEMOMOTION_FPS) || 30);
+    const fps = opts.fps ?? (Number(process.env.AUTODEMO_FPS) || 30);
     const dsf = opts.deviceScaleFactor ?? 1;
     const cdp = await opts.page.context().newCDPSession(opts.page);
     const cap = new ScreencastCapture(cdp, opts.dir, fps);
@@ -132,8 +132,8 @@ export class ScreencastCapture {
     await cdp.send("Page.startScreencast", {
       format: "jpeg",
       // Lower quality => faster JPEG encode => lower capture latency, at the cost
-      // of sharpness. Default favors sharpness; tune with DEMOMOTION_SCREENCAST_QUALITY.
-      quality: Math.min(100, Math.max(1, Number(process.env.DEMOMOTION_SCREENCAST_QUALITY) || 90)),
+      // of sharpness. Default favors sharpness; tune with AUTODEMO_SCREENCAST_QUALITY.
+      quality: Math.min(100, Math.max(1, Number(process.env.AUTODEMO_SCREENCAST_QUALITY) || 90)),
       everyNthFrame: 1,
       maxWidth: Math.ceil(opts.width * dsf),
       maxHeight: Math.ceil(opts.height * dsf)
@@ -219,7 +219,7 @@ export class ScreencastCapture {
 
     // The frame sequence is large; keep only the CFR artifact by default.
     await fs.rm(seqDir, { recursive: true, force: true });
-    if (process.env.DEMOMOTION_KEEP_FRAMES !== "1") {
+    if (process.env.AUTODEMO_KEEP_FRAMES !== "1") {
       await fs.rm(this.framesDir, { recursive: true, force: true });
     }
 
@@ -238,7 +238,7 @@ export class ScreencastCapture {
 /**
  * Turns the `spawn ffmpeg ENOENT` a missing binary produces into a refusal that
  * names the tool and the fix. It fires at `session_stop`, the first moment the
- * encoder is needed; `demomotion mcp` also warns about it at startup.
+ * encoder is needed; `autodemo mcp` also warns about it at startup.
  *
  * Resolves `ffmpeg` and `ffprobe` on PATH the way `spawn` would, so the refusal
  * is the same `toolMissingError` a failed spawn produces — only earlier and
@@ -267,7 +267,7 @@ export function toolMissingError(tool: "ffmpeg" | "ffprobe", error: unknown): Er
     return error instanceof Error ? error : new Error(String(error));
   }
   return new Error(
-    `${tool} is not installed or not on PATH; DemoMotion needs ffmpeg and ffprobe to assemble the capture at session_stop. ` +
+    `${tool} is not installed or not on PATH; AutoDemo needs ffmpeg and ffprobe to assemble the capture at session_stop. ` +
     `Install ffmpeg (macOS: brew install ffmpeg; Debian/Ubuntu: apt-get install ffmpeg; Windows: winget install ffmpeg) and restart the server.`,
     { cause: error }
   );

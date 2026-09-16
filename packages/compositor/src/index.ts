@@ -1,6 +1,6 @@
-import type { DemoProject, SourceTimeMs, OutputTimeMs, DurationMs } from "@demomotion/schema";
-import { outputSize, sourceSize, OUTPUT_ZERO, SOURCE_ZERO, ZERO_MS, addMs, subMs, spanMs, atSpeed, scaleMs, minOf, maxOf, outputEnd } from "@demomotion/schema";
-import { sourceToOutput, totalOutputMs, cursorTrack, framingTrack, referenceCrop, CURSOR_APPROACH_MS, CURSOR_PULSE_MS, type EditList } from "@demomotion/core";
+import type { DemoProject, SourceTimeMs, OutputTimeMs, DurationMs } from "@autodemo/schema";
+import { outputSize, sourceSize, OUTPUT_ZERO, SOURCE_ZERO, ZERO_MS, addMs, subMs, spanMs, atSpeed, scaleMs, minOf, maxOf, outputEnd } from "@autodemo/schema";
+import { sourceToOutput, totalOutputMs, cursorTrack, framingTrack, referenceCrop, CURSOR_APPROACH_MS, CURSOR_PULSE_MS, type EditList } from "@autodemo/core";
 
 // --- Seconds exist only at the emit boundary. -------------------------------
 //
@@ -219,7 +219,7 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
     : null;
   const frameIsland = frameJson === null
     ? ""
-    : `\n  <script type="application/json" id="demomotion-frame">${frameJson}</script>`;
+    : `\n  <script type="application/json" id="autodemo-frame">${frameJson}</script>`;
 
   // The cursor is a SYNTHETIC layer: the deterministic screencast never draws the
   // pointer, so we composite it. Like zooms and callouts it is anchored in
@@ -354,8 +354,8 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
       // coordinates instead of a scale about an origin: it CROPS. #cam holds the
       // whole source frame at CAM_W x CAM_H, and the transform slides the wanted
       // rectangle onto the stage, which clips. frameCentreAt mirrors the pure
-      // framingCentreAt in @demomotion/core exactly (same smoothstep, same holds).
-      var frameData = JSON.parse(document.getElementById("demomotion-frame").textContent);
+      // framingCentreAt in @autodemo/core exactly (same smoothstep, same holds).
+      var frameData = JSON.parse(document.getElementById("autodemo-frame").textContent);
       var frameKf = frameData.track;
       var CROP_W = frameData.crop.width;
       var CROP_H = frameData.crop.height;
@@ -505,17 +505,17 @@ export function generateComposition(project: DemoProject, options: CompositorOpt
     ${captionsHtml}
     <div id="fade"></div>
   </div>
-  <script type="application/json" id="demomotion-cursor">${cursorJson}</script>
-  <script type="application/json" id="demomotion-camera">${cameraJson}</script>
-  <script type="application/json" id="demomotion-captions">${captionJson}</script>
-  <script type="application/json" id="demomotion-transitions">${transitionJson}</script>${frameIsland}
+  <script type="application/json" id="autodemo-cursor">${cursorJson}</script>
+  <script type="application/json" id="autodemo-camera">${cameraJson}</script>
+  <script type="application/json" id="autodemo-captions">${captionJson}</script>
+  <script type="application/json" id="autodemo-transitions">${transitionJson}</script>${frameIsland}
   <script src="${escapeHtml(gsapSrc)}"></script>
   <script>
     // The camera is a PURE FUNCTION of output time, evaluated with real GSAP
     // eases. HyperFrames renders frames out of order across parallel workers, so
     // nothing here may depend on the order in which times are visited.
     (function () {
-      var camera = JSON.parse(document.getElementById("demomotion-camera").textContent);
+      var camera = JSON.parse(document.getElementById("autodemo-camera").textContent);
       var cam = document.getElementById("cam");
       var easeIn = gsap.parseEase("power3.out");
       var easeOut = gsap.parseEase("power2.inOut");
@@ -543,8 +543,8 @@ ${applyJs}
       // --- Synthetic cursor layer. Anchored in sourceMs; projected to output
       // through the EditList, so a click whose instant was cut is never sampled
       // and its pulse never fires. outputToSource and cursorAt mirror the pure
-      // @demomotion/core functions exactly (same windows, same easing). ---
-      var cursorData = JSON.parse(document.getElementById("demomotion-cursor").textContent);
+      // @autodemo/core functions exactly (same windows, same easing). ---
+      var cursorData = JSON.parse(document.getElementById("autodemo-cursor").textContent);
       var cursorKf = cursorData.track;
       var cursorEdit = cursorData.editList;
       var APPROACH = cursorData.approachMs;
@@ -608,7 +608,7 @@ ${applyCursorJs}
       // landing on any frame resolves the same values. Every tween states both
       // endpoints explicitly (fromTo), so nothing depends on the order frames
       // are visited in.
-      var captionData = JSON.parse(document.getElementById("demomotion-captions").textContent);
+      var captionData = JSON.parse(document.getElementById("autodemo-captions").textContent);
       var CAP_IDLE = captionData.idle;
       var CAP_ACTIVE = captionData.active;
       var CAP_ACCENT = captionData.accent;
@@ -655,7 +655,7 @@ ${applyCursorJs}
       //
       // The opening and closing fades are the catalog's "color dip", against the
       // composition background instead of black.
-      var transitionData = JSON.parse(document.getElementById("demomotion-transitions").textContent);
+      var transitionData = JSON.parse(document.getElementById("autodemo-transitions").textContent);
 
       function buildTransitions(tl) {
         transitionData.crossfades.forEach(function (fade) {

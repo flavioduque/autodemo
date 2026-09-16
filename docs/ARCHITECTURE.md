@@ -1,4 +1,4 @@
-# DemoMotion architecture
+# AutoDemo architecture
 
 ## Goal
 
@@ -6,7 +6,7 @@ An AI agent owns the full product-demo workflow: inspect a web app, plan a conci
 
 ## Control flow
 
-AI client → MCP v2 → capture adapter → immutable raw assets + event stream → project compiler → editable `project.json` → `@demomotion/compositor` (HyperFrames HTML) → `hyperframes render` → MP4.
+AI client → MCP v2 → capture adapter → immutable raw assets + event stream → project compiler → editable `project.json` → `@autodemo/compositor` (HyperFrames HTML) → `hyperframes render` → MP4.
 
 ## Stable MCP surface
 
@@ -25,8 +25,8 @@ Raw recording and action metadata are source assets. Zoom, framing, callouts, ca
 
 `browser_fill` redacts values from timeline metadata. This does not hide values visibly rendered by the target application; demo accounts and non-sensitive data remain mandatory.
 
-`DEMOMOTION_ALLOWED_HOSTS` can restrict navigation hosts. Only HTTP and HTTPS URLs are accepted.
+`AUTODEMO_ALLOWED_HOSTS` can restrict navigation hosts. Only HTTP and HTTPS URLs are accepted.
 
 ## Recordly relationship
 
-Recordly is a product/UX reference only. DemoMotion is an independent implementation and does not include Recordly source code.
+Recordly is a product/UX reference only. AutoDemo is an independent implementation and does not include Recordly source code.

@@ -2,12 +2,12 @@ import * as z from "zod/v4";
 
 // Input fragments shared by more than one tool. The MCP surface is built with
 // its own zod instance, so these restate the matching schemas of
-// @demomotion/schema rather than importing them.
+// @autodemo/schema rather than importing them.
 
 /**
  * One kept slice of the capture, played at its own speed (spec section 3).
  * Cuts are implicit: source material inside no segment was cut. This mirrors
- * EditSegmentSchema in @demomotion/schema.
+ * EditSegmentSchema in @autodemo/schema.
  */
 export const editSegmentInput = z.object({
   sourceFromMs: z.number().nonnegative(),

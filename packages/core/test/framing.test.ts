@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { type DemoAction, sourceMs, SOURCE_ZERO, ZERO_MS } from "@demomotion/schema";
+import { type DemoAction, sourceMs, SOURCE_ZERO, ZERO_MS } from "@autodemo/schema";
 import { referenceCrop, framingTrack, framingCentreAt, framingRectAt } from "../src/index.ts";
 
 /**

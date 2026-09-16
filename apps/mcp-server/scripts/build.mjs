@@ -1,6 +1,6 @@
-// Builds the publishable `demomotion` package: ONE file, dist/cli.js.
+// Builds the publishable `autodemo` package: ONE file, dist/cli.js.
 //
-// The three workspace packages (@demomotion/schema, core, compositor) are pure
+// The three workspace packages (@autodemo/schema, core, compositor) are pure
 // TypeScript with no build of their own — they are consumed as source inside
 // the monorepo. A published package cannot depend on `workspace:*` raw TS, so
 // they are bundled INTO dist/cli.js here. Everything in `dependencies` stays

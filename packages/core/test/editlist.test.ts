@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sourceMs, outputMs, type SourceTimeMs, type OutputTimeMs } from "@demomotion/schema";
+import { sourceMs, outputMs, type SourceTimeMs, type OutputTimeMs } from "@autodemo/schema";
 import { totalOutputMs, outputToSource, sourceToOutput, isCut, type EditList, type EditSegment } from "../src/index.ts";
 
 /** Test-fixture ingress: a segment from two source instants typed by hand. */

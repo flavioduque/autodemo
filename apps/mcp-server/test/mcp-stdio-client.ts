@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 
 // A minimal MCP client: newline-delimited JSON-RPC over a child's stdio. It is
-// the ONLY way the tests talk to DemoMotion the way a real MCP client does —
+// the ONLY way the tests talk to AutoDemo the way a real MCP client does —
 // spawning the server as a process and reading its stdout byte by byte — and it
 // is shared by the repo e2e suite (tsx entry) and the pack suite (the tarball's
 // bin), so the two exercise one and the same wire.
@@ -21,7 +21,7 @@ export interface StartOptions {
   clientName?: string;
   /** Called with every tool name `callTool` sends; a coverage hook. */
   onToolCall?: (name: string) => void;
-  /** Forward the spawned server's stderr to ours (DEMOMOTION_E2E_DEBUG=1 does this). */
+  /** Forward the spawned server's stderr to ours (AUTODEMO_E2E_DEBUG=1 does this). */
   forwardStderr?: boolean;
 }
 
@@ -62,7 +62,7 @@ export class McpStdioClient {
       env: options.env ?? { ...process.env }
     });
     const client = new McpStdioClient(child, options.onToolCall);
-    const forward = options.forwardStderr ?? process.env.DEMOMOTION_E2E_DEBUG === "1";
+    const forward = options.forwardStderr ?? process.env.AUTODEMO_E2E_DEBUG === "1";
     child.stderr!.on("data", (d: string) => {
       client.stderr += d;
       if (forward) process.stderr.write(`[server] ${d}`);
@@ -70,9 +70,9 @@ export class McpStdioClient {
     client.initResult = await client.request("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
-      clientInfo: { name: options.clientName ?? "demomotion-test", version: "0" }
+      clientInfo: { name: options.clientName ?? "autodemo-test", version: "0" }
     });
-    assert.equal(client.initResult.serverInfo?.name, "demomotion",
+    assert.equal(client.initResult.serverInfo?.name, "autodemo",
       `unexpected serverInfo: ${JSON.stringify(client.initResult)}`);
     client.notify("notifications/initialized", {});
     return client;

@@ -1,7 +1,7 @@
 # Fixture: target-app
 
 Aplicação web mínima, sem dependências, que faz o papel do "SaaS de um cliente"
-nos testes de captura e render do DemoMotion.
+nos testes de captura e render do AutoDemo.
 
 ## Como servir
 

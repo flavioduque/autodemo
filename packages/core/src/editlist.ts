@@ -1,7 +1,7 @@
 import {
   type SourceTimeMs, type OutputTimeMs, type DurationMs,
   OUTPUT_ZERO, ZERO_MS, addMs, spanMs, atSpeed, scaleMs
-} from "@demomotion/schema";
+} from "@autodemo/schema";
 
 /**
  * The bridge between the two time bases (spec §3).

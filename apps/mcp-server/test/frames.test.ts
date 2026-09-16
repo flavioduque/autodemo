@@ -37,8 +37,8 @@ import {
 // install, the locally installed Google Chrome is driven instead.
 // ---------------------------------------------------------------------------
 
-if (process.platform === "darwin" && !process.env.DEMOMOTION_BROWSER_CHANNEL) {
-  process.env.DEMOMOTION_BROWSER_CHANNEL = "chrome";
+if (process.platform === "darwin" && !process.env.AUTODEMO_BROWSER_CHANNEL) {
+  process.env.AUTODEMO_BROWSER_CHANNEL = "chrome";
 }
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

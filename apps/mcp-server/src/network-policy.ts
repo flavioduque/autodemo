@@ -8,7 +8,7 @@ import net from "node:net";
  * enumerated (`::ffff:127.0.0.1` walks past every "127.0.0.0/8" check); an
  * allowlist has no such property — anything not listed is closed.
  *
- * Entries (`DEMOMOTION_ALLOWED_HOSTS`, comma-separated):
+ * Entries (`AUTODEMO_ALLOWED_HOSTS`, comma-separated):
  *
  *   host            an exact hostname or IP literal, any port
  *   host:port       the same, pinned to ONE port
@@ -81,7 +81,7 @@ export interface Denied {
 export type Decision = Allowed | Denied;
 
 export const DEFAULT_ALLOWED_HOSTS = "localhost,127.0.0.1,::1";
-export const ENV_VAR = "DEMOMOTION_ALLOWED_HOSTS";
+export const ENV_VAR = "AUTODEMO_ALLOWED_HOSTS";
 
 const LOOPBACK_ADDRESSES = ["127.0.0.1", "::1"];
 
@@ -277,7 +277,7 @@ export class NetworkPolicy {
       host: urlHost(target.host),
       port: target.port,
       reason: core.reason,
-      message: `DemoMotion refused ${target.url}: ${core.why} (${current}).${fix}`
+      message: `AutoDemo refused ${target.url}: ${core.why} (${current}).${fix}`
     };
   }
 
@@ -355,12 +355,12 @@ function parseUrl(raw: string): ParseResult {
   try {
     url = new URL(raw);
   } catch {
-    return { ok: false, denial: { allowed: false, url: raw, host: "", port: 0, reason: "invalid-url", message: `DemoMotion refused ${JSON.stringify(raw)}: not a valid URL.` } };
+    return { ok: false, denial: { allowed: false, url: raw, host: "", port: 0, reason: "invalid-url", message: `AutoDemo refused ${JSON.stringify(raw)}: not a valid URL.` } };
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     return {
       ok: false,
-      denial: { allowed: false, url: raw, host: url.hostname, port: 0, reason: "unsupported-scheme", message: `DemoMotion refused ${raw}: only http: and https: URLs can be opened (got ${url.protocol}).` }
+      denial: { allowed: false, url: raw, host: url.hostname, port: 0, reason: "unsupported-scheme", message: `AutoDemo refused ${raw}: only http: and https: URLs can be opened (got ${url.protocol}).` }
     };
   }
   const host = normaliseHost(url.hostname);

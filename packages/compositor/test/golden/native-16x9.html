@@ -62,17 +62,17 @@
     <div id="cap-0" class="cap clip" data-start="1.2" data-duration="1.8" data-track-index="2"><div class="cap-band"><span class="cap-w" id="cap-0-w-0">Open</span> <span class="cap-w" id="cap-0-w-1">the</span> <span class="cap-w" id="cap-0-w-2">form</span></div></div>
     <div id="fade"></div>
   </div>
-  <script type="application/json" id="demomotion-cursor">{"track":[{"sourceMs":1200,"x":0.82,"y":0.18,"click":true},{"sourceMs":3400,"x":0.24,"y":0.63,"click":false},{"sourceMs":7200,"x":0.51,"y":0.91,"click":true}],"editList":[{"sourceFromMs":0,"sourceToMs":4000,"speed":1},{"sourceFromMs":6000,"sourceToMs":10000,"speed":1.5}],"approachMs":500,"pulseMs":400}</script>
-  <script type="application/json" id="demomotion-camera">[{"start":1,"end":2.2,"scale":1.36,"x":0.82,"y":0.18},{"start":4.666667,"end":5.6,"scale":1.22,"x":0.51,"y":0.91}]</script>
-  <script type="application/json" id="demomotion-captions">{"groups":[{"id":"cap-0","start":1.2,"end":3,"words":[{"id":"cap-0-w-0","start":1.2,"end":1.8},{"id":"cap-0-w-1","start":1.8,"end":2.4},{"id":"cap-0-w-2","start":2.4,"end":3}]}],"idle":"#c8d2e6","active":"#ffffff","accent":"#38bdf8","emphasis":0.06}</script>
-  <script type="application/json" id="demomotion-transitions">{"crossfades":[{"id":"clip-1","start":3.82,"duration":0.18}],"opening":0.32,"ending":0.42,"total":6.666667}</script>
+  <script type="application/json" id="autodemo-cursor">{"track":[{"sourceMs":1200,"x":0.82,"y":0.18,"click":true},{"sourceMs":3400,"x":0.24,"y":0.63,"click":false},{"sourceMs":7200,"x":0.51,"y":0.91,"click":true}],"editList":[{"sourceFromMs":0,"sourceToMs":4000,"speed":1},{"sourceFromMs":6000,"sourceToMs":10000,"speed":1.5}],"approachMs":500,"pulseMs":400}</script>
+  <script type="application/json" id="autodemo-camera">[{"start":1,"end":2.2,"scale":1.36,"x":0.82,"y":0.18},{"start":4.666667,"end":5.6,"scale":1.22,"x":0.51,"y":0.91}]</script>
+  <script type="application/json" id="autodemo-captions">{"groups":[{"id":"cap-0","start":1.2,"end":3,"words":[{"id":"cap-0-w-0","start":1.2,"end":1.8},{"id":"cap-0-w-1","start":1.8,"end":2.4},{"id":"cap-0-w-2","start":2.4,"end":3}]}],"idle":"#c8d2e6","active":"#ffffff","accent":"#38bdf8","emphasis":0.06}</script>
+  <script type="application/json" id="autodemo-transitions">{"crossfades":[{"id":"clip-1","start":3.82,"duration":0.18}],"opening":0.32,"ending":0.42,"total":6.666667}</script>
   <script src="gsap.min.js"></script>
   <script>
     // The camera is a PURE FUNCTION of output time, evaluated with real GSAP
     // eases. HyperFrames renders frames out of order across parallel workers, so
     // nothing here may depend on the order in which times are visited.
     (function () {
-      var camera = JSON.parse(document.getElementById("demomotion-camera").textContent);
+      var camera = JSON.parse(document.getElementById("autodemo-camera").textContent);
       var cam = document.getElementById("cam");
       var easeIn = gsap.parseEase("power3.out");
       var easeOut = gsap.parseEase("power2.inOut");
@@ -104,8 +104,8 @@
       // --- Synthetic cursor layer. Anchored in sourceMs; projected to output
       // through the EditList, so a click whose instant was cut is never sampled
       // and its pulse never fires. outputToSource and cursorAt mirror the pure
-      // @demomotion/core functions exactly (same windows, same easing). ---
-      var cursorData = JSON.parse(document.getElementById("demomotion-cursor").textContent);
+      // @autodemo/core functions exactly (same windows, same easing). ---
+      var cursorData = JSON.parse(document.getElementById("autodemo-cursor").textContent);
       var cursorKf = cursorData.track;
       var cursorEdit = cursorData.editList;
       var APPROACH = cursorData.approachMs;
@@ -182,7 +182,7 @@
       // landing on any frame resolves the same values. Every tween states both
       // endpoints explicitly (fromTo), so nothing depends on the order frames
       // are visited in.
-      var captionData = JSON.parse(document.getElementById("demomotion-captions").textContent);
+      var captionData = JSON.parse(document.getElementById("autodemo-captions").textContent);
       var CAP_IDLE = captionData.idle;
       var CAP_ACTIVE = captionData.active;
       var CAP_ACCENT = captionData.accent;
@@ -229,7 +229,7 @@
       //
       // The opening and closing fades are the catalog's "color dip", against the
       // composition background instead of black.
-      var transitionData = JSON.parse(document.getElementById("demomotion-transitions").textContent);
+      var transitionData = JSON.parse(document.getElementById("autodemo-transitions").textContent);
 
       function buildTransitions(tl) {
         transitionData.crossfades.forEach(function (fade) {

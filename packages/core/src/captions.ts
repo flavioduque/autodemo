@@ -1,7 +1,7 @@
 import {
   type DemoAction, type SourceTimeMs, type DurationMs,
   ZERO_MS, durationMs, addMs, subMs, spanMs, atSpeed, scaleMs, minOf, roundMs, captureEnd
-} from "@demomotion/schema";
+} from "@autodemo/schema";
 
 /**
  * WHY PER-WORD TIMESTAMPS NOW, WITH NO AUDIO AT ALL.

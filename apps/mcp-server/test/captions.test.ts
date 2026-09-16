@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DemoProjectSchema } from "@demomotion/schema";
+import { DemoProjectSchema } from "@autodemo/schema";
 import { buildProject, updateProject } from "../src/project.ts";
 import { projectUpdateInput } from "../src/server.ts";
 
@@ -76,7 +76,7 @@ test("project_update accepts captions, so prose can be written without re-record
   assert.equal(parsed.captions?.[0].words.length, 2);
 
   // Half two: it survives all the way to disk, through updateProject.
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-caption-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-caption-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const manifestPath = path.join(dir, "capture.json");
   await fs.writeFile(manifestPath, JSON.stringify({
@@ -99,7 +99,7 @@ test("project_update accepts captions, so prose can be written without re-record
 });
 
 test("buildProject seeds a caption skeleton from the labels the recorder captured", async (t) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "demomotion-caption-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autodemo-caption-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
 
   const manifestPath = path.join(dir, "capture.json");

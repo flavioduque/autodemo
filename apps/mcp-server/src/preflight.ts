@@ -4,7 +4,7 @@ import path from "node:path";
 import { PLAYWRIGHT_VERSION } from "./versions.js";
 
 /**
- * Startup diagnostics for `demomotion mcp`.
+ * Startup diagnostics for `autodemo mcp`.
  *
  * An `npx` user has no repo, no README open and no terminal for the server:
  * the MCP client launches it and shows its stderr in a log. So each problem is
@@ -32,7 +32,7 @@ export interface PreflightReport {
 
 export const BROWSER_FIXES =
   `run "npx playwright@${PLAYWRIGHT_VERSION} install chromium" to install Playwright's Chromium, ` +
-  `or set DEMOMOTION_BROWSER_CHANNEL=chrome to drive an installed Google Chrome`;
+  `or set AUTODEMO_BROWSER_CHANNEL=chrome to drive an installed Google Chrome`;
 
 /**
  * Mirrors the locations Playwright's own registry looks in for a channel. Kept
@@ -114,8 +114,8 @@ export async function preflight(options: PreflightOptions = {}): Promise<Preflig
 
   // --- capture browser ----------------------------------------------------
   let browser: PreflightReport["browser"];
-  const channel = env.DEMOMOTION_BROWSER_CHANNEL?.trim();
-  const executable = env.DEMOMOTION_BROWSER_EXECUTABLE?.trim();
+  const channel = env.AUTODEMO_BROWSER_CHANNEL?.trim();
+  const executable = env.AUTODEMO_BROWSER_EXECUTABLE?.trim();
   if (executable) {
     // A specific binary wins over a channel and over the bundled build (the
     // launch gives it the same precedence), so it is the only thing to check.
@@ -124,7 +124,7 @@ export async function preflight(options: PreflightOptions = {}): Promise<Preflig
     } else {
       browser = "missing";
       warnings.push(
-        `no usable capture browser: DEMOMOTION_BROWSER_EXECUTABLE is set but ${executable} does not exist; fix the path or unset it, ${BROWSER_FIXES}`
+        `no usable capture browser: AUTODEMO_BROWSER_EXECUTABLE is set but ${executable} does not exist; fix the path or unset it, ${BROWSER_FIXES}`
       );
     }
   } else if (channel) {
@@ -136,7 +136,7 @@ export async function preflight(options: PreflightOptions = {}): Promise<Preflig
       } else {
         browser = "missing";
         warnings.push(
-          `no usable capture browser: DEMOMOTION_BROWSER_CHANNEL is set but browser channel "${channel}" was not found ` +
+          `no usable capture browser: AUTODEMO_BROWSER_CHANNEL is set but browser channel "${channel}" was not found ` +
           `(looked in ${candidates.join(", ")}); install that browser, ${BROWSER_FIXES}`
         );
       }
@@ -144,7 +144,7 @@ export async function preflight(options: PreflightOptions = {}): Promise<Preflig
       // Known elsewhere, absent here by construction: there is nothing to look for.
       browser = "missing";
       warnings.push(
-        `no usable capture browser: DEMOMOTION_BROWSER_CHANNEL is set but browser channel "${channel}" is not available on ` +
+        `no usable capture browser: AUTODEMO_BROWSER_CHANNEL is set but browser channel "${channel}" is not available on ` +
         `${process.platform} (Playwright has no such build for this platform); unset it or pick a channel this platform has, ${BROWSER_FIXES}`
       );
     } else {
